@@ -22,7 +22,7 @@ final class WhatsAppService
         $pdo = Database::connection();
 
         $productLabel = Products::label($customer['selected_product']) ?? $customer['selected_product'];
-        $sessionLabel = VoucherService::formatSessionLabel($customer['session']);
+        $sessionLabel = VoucherService::formatVoucherTimeLabel($voucher);
         $eventDateFormatted = (new DateTimeImmutable($voucher['event_date']))->format('j F Y');
 
         $storeName = Settings::get('store_name') . ', ' . Settings::get('branch_name');
@@ -35,12 +35,12 @@ final class WhatsAppService
             [
                 'type' => 'body',
                 'parameters' => [
-                    ['type' => 'text', 'text' => self::waText($customer['full_name'])],
-                    ['type' => 'text', 'text' => self::waText($voucher['voucher_code'])],
-                    ['type' => 'text', 'text' => self::waText($productLabel)],
-                    ['type' => 'text', 'text' => self::waText($eventDateFormatted)],
-                    ['type' => 'text', 'text' => self::waText($sessionLabel)],
-                    ['type' => 'text', 'text' => self::waText($storeName)],
+                    ['type' => 'text', 'text' => self::waText($customer['full_name'], 50)],
+                    ['type' => 'text', 'text' => self::waText($voucher['voucher_code'], 20)],
+                    ['type' => 'text', 'text' => self::waText($productLabel, 80)],
+                    ['type' => 'text', 'text' => self::waText($eventDateFormatted, 30)],
+                    ['type' => 'text', 'text' => self::waText($sessionLabel, 30)],
+                    ['type' => 'text', 'text' => self::waText($storeName, 80)],
                 ],
             ],
         ];
@@ -114,14 +114,93 @@ final class WhatsAppService
         return ['ok' => false, 'reason' => 'api_error', 'detail' => $decoded];
     }
 
+    /**
+     * Send OTP via WhatsApp using the `otptemp` authentication template.
+     * Template format: {{1}} is your verification code.
+     * @return array{ok:bool, error?:string}
+     */
+    public static function sendOtp(string $mobileE164, string $otp): array
+    {
+        global $CONFIG;
+        $wa = $CONFIG['whatsapp'];
+
+        if (empty($wa['access_token']) || empty($wa['phone_number_id'])) {
+            return ['ok' => false, 'error' => 'WhatsApp not configured.'];
+        }
+
+        $otpTemplate = (string) ($wa['otp_template_name'] ?? 'otptemp');
+        $otpLang     = (string) ($wa['otp_template_lang'] ?? 'en');
+
+        $payload = [
+            'messaging_product' => 'whatsapp',
+            'to'   => ltrim($mobileE164, '+'),
+            'type' => 'template',
+            'template' => [
+                'name'     => $otpTemplate,
+                'language' => ['code' => $otpLang],
+                'components' => [
+                    [
+                        'type' => 'body',
+                        'parameters' => [
+                            ['type' => 'text', 'text' => $otp],
+                        ],
+                    ],
+                    // button component for "Copy code" (index 0 = COPY_CODE button)
+                    [
+                        'type'     => 'button',
+                        'sub_type' => 'url',
+                        'index'    => '0',
+                        'parameters' => [
+                            ['type' => 'text', 'text' => $otp],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $url = "https://graph.facebook.com/{$wa['api_version']}/{$wa['phone_number_id']}/messages";
+        $ch = curl_init($url);
+        $curlOpts = [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $wa['access_token'],
+                'Content-Type: application/json',
+            ],
+            CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            CURLOPT_TIMEOUT => 20,
+        ];
+        $caBundle = APP_ROOT . '/storage/certs/cacert.pem';
+        if (is_file($caBundle)) {
+            $curlOpts[CURLOPT_CAINFO] = $caBundle;
+        }
+        curl_setopt_array($ch, $curlOpts);
+        $response = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        curl_close($ch);
+
+        if ($response === false) {
+            return ['ok' => false, 'error' => 'Network error: ' . $curlErr];
+        }
+
+        $decoded = json_decode($response, true);
+        if ($httpCode >= 200 && $httpCode < 300 && isset($decoded['messages'][0]['id'])) {
+            return ['ok' => true];
+        }
+
+        $err = (string) ($decoded['error']['message'] ?? $response);
+        return ['ok' => false, 'error' => mb_substr($err, 0, 200)];
+    }
+
     /** WhatsApp body params: no newlines/tabs; normalize fancy punctuation. */
-    private static function waText(?string $value): string
+    private static function waText(?string $value, int $maxLen = 200): string
     {
         $value = trim((string) $value);
         $value = str_replace(["\r", "\n", "\t"], ' ', $value);
         $value = str_replace(['–', '—', '₹'], ['-', '-', 'Rs.'], $value);
         $value = preg_replace('/\s+/', ' ', $value) ?? $value;
-        return mb_substr($value, 0, 1024);
+        return mb_substr($value, 0, $maxLen);
     }
 
     /**

@@ -37,7 +37,7 @@ if ($existing !== null) {
         'ok' => true,
         'registered' => true,
         'valid' => true,
-        'message' => 'This mobile number is already registered. Voucher / coupon already used for this number.',
+        'message' => 'This mobile number already used a voucher earlier. Only one coupon per number is allowed.',
     ]);
 }
 

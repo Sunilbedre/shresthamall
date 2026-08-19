@@ -17,6 +17,7 @@ final class CustomerService
     public const ERR_REGISTRATION_CLOSED = 'REGISTRATION_CLOSED';
     public const ERR_PRODUCT_FULL = 'PRODUCT_FULL';
     public const ERR_VALIDATION = 'VALIDATION';
+    public const ERR_SLOT_INVALID = 'SLOT_INVALID';
 
     /**
      * Attempts to register a customer + generate their voucher in one DB transaction.
@@ -40,26 +41,26 @@ final class CustomerService
         $mobile = Validation::normaliseMobile((string) ($input['mobile_number'] ?? ''));
         if ($mobile === null) {
             $errors['mobile_number'] = 'Please enter a valid 10-digit Indian mobile number.';
+        } elseif (SmsAlertService::isEnabled() && !OtpService::isVerified($mobile)) {
+            $errors['otp'] = 'Please verify your mobile number with OTP.';
         }
 
-        $productKey = (string) ($input['selected_offer'] ?? '');
-        if (!Validation::validateProductKey($productKey)) {
-            $errors['selected_offer'] = 'Please select one offer.';
-        }
-
-        $session = (string) ($input['session'] ?? '');
-        if (!Products::isValidSession($session)) {
-            $errors['session'] = 'Please select a time slot.';
+        $slotId = (int) ($input['offer_slot_id'] ?? 0);
+        $slot = $slotId > 0 ? OfferCatalog::findSlot($slotId) : null;
+        if ($slot === null || (int) ($slot['active'] ?? 0) !== 1) {
+            $errors['offer_slot_id'] = 'Please select a product date and time slot.';
+        } elseif (!OfferCatalog::productExists((string) $slot['product_key'])) {
+            $errors['offer_slot_id'] = 'Selected offer is not available.';
         }
 
         $consent = !empty($input['consent']);
         if (!$consent) {
-            $errors['consent'] = 'Please accept the consent checkbox to continue.';
+            $errors['consent'] = 'Please agree to the Terms & Conditions and WhatsApp updates to continue.';
         }
 
         $area = Validation::validateArea((string) ($input['area'] ?? ''));
         if ($area === null) {
-            $errors['area'] = 'Please select the Bengaluru area you are coming from.';
+            $errors['area'] = 'Please select the area you are coming from.';
         }
 
         $ageGroup = isset($input['age_group']) ? trim((string) $input['age_group']) : null;
@@ -68,6 +69,10 @@ final class CustomerService
         if (!empty($errors)) {
             return ['ok' => false, 'error' => self::ERR_VALIDATION, 'fields' => $errors];
         }
+
+        $productKey = (string) $slot['product_key'];
+        $session = (string) $slot['session'];
+        $eventDate = (string) $slot['event_date'];
 
         $pdo = Database::connection();
 
@@ -80,35 +85,34 @@ final class CustomerService
         // ---- Transaction: limit check + insert customer + voucher atomically ----------
         $pdo->beginTransaction();
         try {
-            // Per product × time slot caps (saree 500 / others 100 by default)
-            if (Settings::get('product_limits_enabled', '1') === '1') {
-                $limitKey = Products::limitKeyFor($productKey);
-                $limit = (int) Settings::get($limitKey, (string) Products::defaultLimit($productKey));
-                if ($limit > 0) {
-                    $stmt = $pdo->prepare("
-                        SELECT COUNT(*) FROM customers
-                        WHERE selected_product = :p AND session = :s
-                    ");
-                    $stmt->execute(['p' => $productKey, 's' => $session]);
-                    $count = (int) $stmt->fetchColumn();
-                    if ($count >= $limit) {
-                        $pdo->rollBack();
-                        return ['ok' => false, 'error' => self::ERR_PRODUCT_FULL];
-                    }
+            // Capacity for this exact product × date × slot
+            $capacity = (int) $slot['capacity'];
+            if ($capacity > 0) {
+                $stmt = $pdo->prepare("
+                    SELECT COUNT(*) FROM customers
+                    WHERE selected_product = :p AND session = :s AND event_date = :d
+                ");
+                $stmt->execute(['p' => $productKey, 's' => $session, 'd' => $eventDate]);
+                $count = (int) $stmt->fetchColumn();
+                if ($count >= $capacity) {
+                    $pdo->rollBack();
+                    return ['ok' => false, 'error' => self::ERR_PRODUCT_FULL];
                 }
             }
 
             $insertCustomer = $pdo->prepare("
                 INSERT INTO customers
-                    (full_name, mobile_number, selected_product, session, area, age_group, gender, consent, ip_address, user_agent, registered_at)
+                    (full_name, mobile_number, selected_product, session, event_date, offer_slot_id, area, age_group, gender, consent, ip_address, user_agent, registered_at)
                 VALUES
-                    (:full_name, :mobile_number, :selected_product, :session, :area, :age_group, :gender, 1, :ip, :ua, datetime('now'))
+                    (:full_name, :mobile_number, :selected_product, :session, :event_date, :offer_slot_id, :area, :age_group, :gender, 1, :ip, :ua, datetime('now'))
             ");
             $insertCustomer->execute([
                 'full_name' => $name,
                 'mobile_number' => $mobile,
                 'selected_product' => $productKey,
                 'session' => $session,
+                'event_date' => $eventDate,
+                'offer_slot_id' => $slotId,
                 'area' => $area ?: null,
                 'age_group' => $ageGroup ?: null,
                 'gender' => $gender ?: null,
@@ -117,8 +121,7 @@ final class CustomerService
             ]);
             $customerId = (int) $pdo->lastInsertId();
 
-            $eventDate = Settings::get('event_date', date('Y-m-d'));
-            $window = VoucherService::sessionWindow($eventDate, $session);
+            $window = VoucherService::slotWindow($slot);
             $voucherCode = VoucherService::generateCode();
 
             $insertVoucher = $pdo->prepare("
@@ -136,9 +139,10 @@ final class CustomerService
             ]);
             $voucherId = (int) $pdo->lastInsertId();
 
-            AuditLog::record('system', 'REGISTRATION_CREATED', "customer_id={$customerId} mobile={$mobile} product={$productKey} session={$session}", $ip);
+            AuditLog::record('system', 'REGISTRATION_CREATED', "customer_id={$customerId} mobile={$mobile} product={$productKey} date={$eventDate} session={$session}", $ip);
 
             $pdo->commit();
+            OtpService::clear();
         } catch (PDOException $e) {
             $pdo->rollBack();
             // UNIQUE constraint race: someone else registered this exact mobile microseconds earlier.

@@ -1,5 +1,5 @@
 <?php
-/** templates/admin_nav.php â€” expects $activePage (dashboard|registrations|settings|exports|staff) */
+/** templates/admin_nav.php — expects $activePage (dashboard|registrations|settings|exports|staff|offers) */
 $activePage = $activePage ?? '';
 
 $navItems = [];
@@ -11,6 +11,7 @@ if (AuthService::isAdmin() || AuthService::isStaff() || AuthService::isSubAdmin(
 }
 if (AuthService::isAdmin()) {
     $navItems['exports'] = [admin_url('exports.php'), 'Exports'];
+    $navItems['offers'] = [admin_url('events.php'), 'Events'];
     $navItems['settings'] = [admin_url('settings.php'), 'Settings'];
     $navItems['staff'] = [admin_url('staff.php'), 'Staff'];
 }

@@ -41,10 +41,37 @@ final class VoucherService
         return ['start' => $start, 'end' => $end];
     }
 
+    /** Window from a dynamic offer_slots row. */
+    public static function slotWindow(array $slot): array
+    {
+        $tz = new DateTimeZone('Asia/Kolkata');
+        $date = (string) $slot['event_date'];
+        $start = new DateTimeImmutable($date . ' ' . $slot['slot_start'], $tz);
+        $end = new DateTimeImmutable($date . ' ' . $slot['slot_end'], $tz);
+        return ['start' => $start, 'end' => $end];
+    }
+
     public static function formatSessionLabel(string $session): string
     {
         $window = self::sessionWindow(date('Y-m-d'), $session); // date irrelevant, only formatting times
         return $window['start']->format('g:i A') . ' – ' . $window['end']->format('g:i A');
+    }
+
+    public static function formatSlotLabel(array $slot): string
+    {
+        return OfferCatalog::formatSessionRange($slot);
+    }
+
+    /** Human time range from voucher session_start / session_end. */
+    public static function formatVoucherTimeLabel(array $voucher): string
+    {
+        try {
+            $start = new DateTimeImmutable($voucher['session_start'], new DateTimeZone('Asia/Kolkata'));
+            $end = new DateTimeImmutable($voucher['session_end'], new DateTimeZone('Asia/Kolkata'));
+            return $start->format('g:i A') . ' – ' . $end->format('g:i A');
+        } catch (Throwable $e) {
+            return self::formatSessionLabel((string) ($voucher['session'] ?? 'morning'));
+        }
     }
 
     /**

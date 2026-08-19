@@ -52,6 +52,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 VoucherModel::setStatus((int) $voucher['id'], 'ACTIVE', AuthService::currentUsername() ?? 'admin');
                 $flash = 'Voucher unblocked.';
             }
+        } elseif ($action === 'delete' && $canBlock) {
+            $mobile = $customer['mobile_number'] ?? '';
+            $pdo->beginTransaction();
+            try {
+                $pdo->prepare("DELETE FROM vouchers WHERE customer_id = ?")->execute([$customerId]);
+                $pdo->prepare("DELETE FROM whatsapp_logs WHERE customer_id = ?")->execute([$customerId]);
+                $pdo->prepare("DELETE FROM customers WHERE id = ?")->execute([$customerId]);
+                $pdo->commit();
+                $flash = "Registration deleted — mobile {$mobile} can register again.";
+            } catch (\Throwable $e) {
+                $pdo->rollBack();
+                $flashError = 'Delete failed: ' . $e->getMessage();
+            }
         }
     }
 }
@@ -62,11 +75,35 @@ $productFilter = (string) ($_GET['product'] ?? '');
 $sessionFilter = (string) ($_GET['session'] ?? '');
 $voucherStatusFilter = (string) ($_GET['voucher_status'] ?? '');
 $waStatusFilter = (string) ($_GET['wa_status'] ?? '');
+// Default: current active event dates only (past numbers stay blocked but hidden here)
+$eventDateFilter = (string) ($_GET['event_date'] ?? 'current');
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = 20;
 
+$activeEventDates = OfferCatalog::eventDates(true);
+$registeredDates = OfferCatalog::registeredEventDates();
+$dateChoices = array_values(array_unique(array_merge($activeEventDates, $registeredDates)));
+rsort($dateChoices);
+
 $where = [];
 $params = [];
+
+if ($eventDateFilter === 'current') {
+    if ($activeEventDates) {
+        $ph = [];
+        foreach ($activeEventDates as $i => $d) {
+            $key = 'ced' . $i;
+            $ph[] = ':' . $key;
+            $params[$key] = $d;
+        }
+        $where[] = 'c.event_date IN (' . implode(',', $ph) . ')';
+    } else {
+        $where[] = '1 = 0'; // no active event → empty list
+    }
+} elseif ($eventDateFilter !== 'all' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $eventDateFilter)) {
+    $where[] = 'c.event_date = :event_date';
+    $params['event_date'] = $eventDateFilter;
+}
 
 if ($search !== '') {
     $normalisedSearch = Validation::normaliseMobile($search);
@@ -152,6 +189,18 @@ require __DIR__ . '/../templates/header.php';
         class="w-full rounded-lg gold-border px-3 py-2">
     </div>
     <div>
+      <label class="block font-semibold text-maroon-dark mb-1">Event date</label>
+      <select name="event_date" class="w-full rounded-lg gold-border px-3 py-2">
+        <option value="current" <?= $eventDateFilter === 'current' ? 'selected' : '' ?>>Current event</option>
+        <?php foreach ($dateChoices as $d): ?>
+          <option value="<?= e($d) ?>" <?= $eventDateFilter === $d ? 'selected' : '' ?>>
+            <?= e((new DateTimeImmutable($d))->format('d M Y')) ?>
+          </option>
+        <?php endforeach; ?>
+        <option value="all" <?= $eventDateFilter === 'all' ? 'selected' : '' ?>>All history</option>
+      </select>
+    </div>
+    <div>
       <label class="block font-semibold text-maroon-dark mb-1">Product</label>
       <select name="product" class="w-full rounded-lg gold-border px-3 py-2">
         <option value="">All</option>
@@ -164,8 +213,8 @@ require __DIR__ . '/../templates/header.php';
       <label class="block font-semibold text-maroon-dark mb-1">Session</label>
       <select name="session" class="w-full rounded-lg gold-border px-3 py-2">
         <option value="">All</option>
-        <option value="morning" <?= $sessionFilter === 'morning' ? 'selected' : '' ?>>11 AM – 2 PM</option>
-        <option value="evening" <?= $sessionFilter === 'evening' ? 'selected' : '' ?>>5 PM – 8 PM</option>
+        <option value="morning" <?= $sessionFilter === 'morning' ? 'selected' : '' ?>>Morning</option>
+        <option value="evening" <?= $sessionFilter === 'evening' ? 'selected' : '' ?>>Evening</option>
       </select>
     </div>
     <div>
@@ -177,9 +226,9 @@ require __DIR__ . '/../templates/header.php';
         <?php endforeach; ?>
       </select>
     </div>
-    <div class="flex gap-2">
-      <button type="submit" class="flex-1 bg-maroon hover:bg-maroon-dark text-ivory font-bold px-4 py-2 rounded-lg">Filter</button>
-      <a href="<?= e(admin_url('registrations.php')) ?>" class="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-maroon-dark font-semibold px-4 py-2 rounded-lg">Reset</a>
+    <div class="flex gap-2 sm:col-span-6">
+      <button type="submit" class="bg-maroon hover:bg-maroon-dark text-ivory font-bold px-4 py-2 rounded-lg">Filter</button>
+      <a href="<?= e(admin_url('registrations.php')) ?>" class="text-center bg-gray-100 hover:bg-gray-200 text-maroon-dark font-semibold px-4 py-2 rounded-lg">Reset</a>
     </div>
   </form>
 
@@ -192,6 +241,7 @@ require __DIR__ . '/../templates/header.php';
           <th class="px-3 py-3 text-left">Mobile</th>
           <th class="px-3 py-3 text-left">Area</th>
           <th class="px-3 py-3 text-left">Product</th>
+          <th class="px-3 py-3 text-left">Date</th>
           <th class="px-3 py-3 text-left">Session</th>
           <th class="px-3 py-3 text-left">Voucher</th>
           <th class="px-3 py-3 text-left">Registered</th>
@@ -208,10 +258,11 @@ require __DIR__ . '/../templates/header.php';
             <td class="px-3 py-2.5 font-medium"><?= e($row['full_name']) ?></td>
             <td class="px-3 py-2.5"><?= e(Validation::maskMobile($row['mobile_number'])) ?></td>
             <td class="px-3 py-2.5 whitespace-nowrap"><?= e($row['area'] ?? '—') ?></td>
-            <td class="px-3 py-2.5"><?= e(Products::label($row['selected_product'])) ?></td>
+            <td class="px-3 py-2.5"><?= e(Products::label($row['selected_product']) ?? $row['selected_product']) ?></td>
+            <td class="px-3 py-2.5 whitespace-nowrap"><?= e(!empty($row['event_date']) ? (new DateTimeImmutable($row['event_date']))->format('d M Y') : '—') ?></td>
             <td class="px-3 py-2.5 whitespace-nowrap"><?= e(match ($row['session'] ?? '') {
-              'morning' => '11 AM – 2 PM',
-              'evening' => '5 PM – 8 PM',
+              'morning' => 'Morning',
+              'evening' => 'Evening',
               default => $row['session'] ?? '-',
             }) ?></td>
             <td class="px-3 py-2.5 font-mono"><?= e($row['voucher_code'] ?? '-') ?></td>
@@ -264,6 +315,12 @@ require __DIR__ . '/../templates/header.php';
                       <button type="submit" class="text-xs font-semibold text-red-600 underline">Block</button>
                     </form>
                   <?php endif; ?>
+                  <form method="post" class="inline" onsubmit="return confirm('Delete this registration? The mobile number will be free to register again.');">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="customer_id" value="<?= (int) $row['id'] ?>">
+                    <button type="submit" class="text-xs font-semibold text-red-700 underline">Delete</button>
+                  </form>
                 <?php endif; ?>
               </div>
               <?php else: ?>
@@ -273,7 +330,7 @@ require __DIR__ . '/../templates/header.php';
           </tr>
         <?php endforeach; ?>
         <?php if (empty($rows)): ?>
-          <tr><td colspan="12" class="px-3 py-8 text-center text-maroon-dark/60">No registrations match these filters.</td></tr>
+          <tr><td colspan="13" class="px-3 py-8 text-center text-maroon-dark/60">No registrations match these filters.</td></tr>
         <?php endif; ?>
       </tbody>
     </table>

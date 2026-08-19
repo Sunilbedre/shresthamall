@@ -80,9 +80,24 @@ $CONFIG = [
         'access_token'         => env('WHATSAPP_ACCESS_TOKEN', ''),
         'template_name'        => env('WHATSAPP_TEMPLATE_NAME', 'your_1_special_offer'),
         'template_lang'        => env('WHATSAPP_TEMPLATE_LANG', 'en'),
+        'otp_template_name'    => env('WHATSAPP_OTP_TEMPLATE_NAME', 'otptemp'),
+        'otp_template_lang'    => env('WHATSAPP_OTP_TEMPLATE_LANG', 'en'),
         'header_image_url'     => env('WHATSAPP_HEADER_IMAGE_URL', ''),
         'api_version'          => env('WHATSAPP_API_VERSION', 'v20.0'),
         'webhook_verify_token' => env('WHATSAPP_WEBHOOK_VERIFY_TOKEN', ''),
+    ],
+
+    'smsalert' => [
+        'enabled'     => env('SMSALERT_ENABLED', '1') === '1',
+        'apikey'      => env('SMSALERT_API_KEY', ''),
+        'user'        => env('SMSALERT_USER', ''),
+        'password'    => env('SMSALERT_PASSWORD', ''),
+        'sender'      => env('SMSALERT_SENDER', 'BEDSOL'),
+        'route'       => env('SMSALERT_ROUTE', ''),
+        'otp_message' => env(
+            'SMSALERT_OTP_MESSAGE',
+            'Your OTP for Shreeshta Family Store offer is {otp}. Valid for 10 mins. Do not share.'
+        ),
     ],
 
     'turnstile' => [

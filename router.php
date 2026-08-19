@@ -42,6 +42,10 @@ $routes = [
     '/offer.php'             => 'public/offer.php',
     '/check-mobile'          => 'public/check_mobile.php',
     '/check-mobile.php'      => 'public/check_mobile.php',
+    '/send-otp'              => 'public/send_otp.php',
+    '/send-otp.php'          => 'public/send_otp.php',
+    '/verify-otp'            => 'public/verify_otp.php',
+    '/verify-otp.php'        => 'public/verify_otp.php',
     '/success'               => 'public/success.php',
     '/success.php'           => 'public/success.php',
     '/verify'                => 'public/verify.php',
@@ -70,6 +74,12 @@ $adminMap = [
     '/exports.php'   => 'admin/exports.php',
     '/staff'         => 'admin/staff.php',
     '/staff.php'     => 'admin/staff.php',
+    '/offers'        => 'admin/offers.php',
+    '/offers.php'    => 'admin/offers.php',
+    '/events'        => 'admin/events.php',
+    '/events.php'    => 'admin/events.php',
+    '/Events'        => 'admin/events.php',
+    '/Events.php'    => 'admin/events.php',
 ];
 
 $path = rtrim($uri, '/') ?: '/';

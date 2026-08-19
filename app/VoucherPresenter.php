@@ -19,7 +19,7 @@ final class VoucherPresenter
             'code'         => $voucher['voucher_code'],
             'product'      => Products::label($customer['selected_product']) ?? $customer['selected_product'],
             'session'      => $customer['session'],
-            'time_slot'    => VoucherService::formatSessionLabel($customer['session']),
+            'time_slot'    => VoucherService::formatVoucherTimeLabel($voucher),
             'offer_date'   => (new DateTimeImmutable($eventDate))->format('d M Y'),
             'offer_date_raw' => $eventDate,
             'store'        => Settings::get('store_name') . ' – ' . Settings::get('branch_name'),
