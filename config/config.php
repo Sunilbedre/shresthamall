@@ -94,9 +94,11 @@ $CONFIG = [
         'password'    => env('SMSALERT_PASSWORD', ''),
         'sender'      => env('SMSALERT_SENDER', 'BEDSOL'),
         'route'       => env('SMSALERT_ROUTE', ''),
+        'otp_template_name' => env('SMSALERT_OTP_TEMPLATE_NAME', 'bedreportalotp'),
+        'otp_portal_name'   => env('SMSALERT_OTP_PORTAL_NAME', 'Shreeshta Family Store'),
         'otp_message' => env(
             'SMSALERT_OTP_MESSAGE',
-            'Your OTP for Shreeshta Family Store offer is {otp}. Valid for 10 mins. Do not share.'
+            'Your OTP for login to {portal} web portal is {otp}. Valid for 10 mins. Do not share this OTP. -BEDRES'
         ),
     ],
 

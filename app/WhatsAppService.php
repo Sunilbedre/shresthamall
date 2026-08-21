@@ -22,6 +22,7 @@ final class WhatsAppService
         $pdo = Database::connection();
 
         $productLabel = Products::label($customer['selected_product']) ?? $customer['selected_product'];
+        $productLabel = self::waProductLabel($productLabel);
         $sessionLabel = VoucherService::formatVoucherTimeLabel($voucher);
         $eventDateFormatted = (new DateTimeImmutable($voucher['event_date']))->format('j F Y');
 
@@ -201,6 +202,19 @@ final class WhatsAppService
         $value = str_replace(['–', '—', '₹'], ['-', '-', 'Rs.'], $value);
         $value = preg_replace('/\s+/', ' ', $value) ?? $value;
         return mb_substr($value, 0, $maxLen);
+    }
+
+    /** Keep marketing labels short for WhatsApp template limits. */
+    private static function waProductLabel(?string $label): string
+    {
+        $label = trim((string) $label);
+        if ($label === '') {
+            return '';
+        }
+        if (stripos($label, 'Semi Kanjeevaram Sarees') !== false) {
+            return 'Semi Kanjeevaram Sarees';
+        }
+        return $label;
     }
 
     /**

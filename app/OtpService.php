@@ -13,8 +13,8 @@ final class OtpService
     private const MAX_SENDS_PER_MOBILE = 5;
     private const MAX_VERIFY_ATTEMPTS = 5;
 
-    /** Default SMS body — register this text (or matching DLT template) on SMS Alert. */
-    public const DEFAULT_MESSAGE = 'Your OTP for Shreeshta Family Store offer is {otp}. Valid for 10 mins. Do not share.';
+    /** Default SMS body — matches approved template style (bedreportalotp). */
+    public const DEFAULT_MESSAGE = 'Your OTP for login to {portal} web portal is {otp}. Valid for 10 mins. Do not share this OTP. -BEDRES';
 
     /**
      * @return array{ok:bool, error?:string, cooldown?:int, channel?:string}
@@ -47,26 +47,35 @@ final class OtpService
         }
 
         $otp = (string) random_int(100000, 999999);
-        $channel = 'none';
 
-        // 1️⃣  Try WhatsApp first (otptemp — no DLT needed)
+        // Send on BOTH channels where possible.
+        $waOk = false;
+        $smsOk = false;
+        $waErr = '';
+        $smsErr = '';
+
         $waResult = WhatsAppService::sendOtp($mobileE164, $otp);
         if ($waResult['ok'] ?? false) {
-            $channel = 'whatsapp';
+            $waOk = true;
         } else {
-            // 2️⃣  Fallback to SMS Alert if configured
-            if (SmsAlertService::isEnabled()) {
-                $template = (string) ($CONFIG['smsalert']['otp_message'] ?? self::DEFAULT_MESSAGE);
-                $text = str_replace('{otp}', $otp, $template);
-                $smsResult = SmsAlertService::sendSms($mobileE164, $text);
-                if ($smsResult['ok'] ?? false) {
-                    $channel = 'sms';
-                } else {
-                    return ['ok' => false, 'error' => $smsResult['error'] ?? 'Failed to send OTP.'];
-                }
+            $waErr = (string) ($waResult['error'] ?? 'WhatsApp OTP failed');
+        }
+
+        if (SmsAlertService::isEnabled()) {
+            $template = (string) ($CONFIG['smsalert']['otp_message'] ?? self::DEFAULT_MESSAGE);
+            $portal = (string) ($CONFIG['smsalert']['otp_portal_name'] ?? 'Shreeshta Family Store');
+            $text = str_replace(['{otp}', '{portal}'], [$otp, $portal], $template);
+            $smsResult = SmsAlertService::sendSms($mobileE164, $text);
+            if ($smsResult['ok'] ?? false) {
+                $smsOk = true;
             } else {
-                return ['ok' => false, 'error' => $waResult['error'] ?? 'Could not send OTP. Please try again.'];
+                $smsErr = (string) ($smsResult['error'] ?? 'SMS OTP failed');
             }
+        }
+
+        if (!$waOk && !$smsOk) {
+            $joined = trim(($waErr !== '' ? 'WhatsApp: ' . $waErr : '') . ($smsErr !== '' ? ' | SMS: ' . $smsErr : ''));
+            return ['ok' => false, 'error' => ($joined !== '' ? $joined : 'Could not send OTP. Please try again.')];
         }
 
         $_SESSION[self::SESSION_KEY] = [
@@ -77,14 +86,16 @@ final class OtpService
             'send_count'      => (is_array($state) && ($state['mobile'] ?? '') === $mobileE164) ? $sends + 1 : 1,
             'verify_attempts' => 0,
             'verified'        => false,
-            'channel'         => $channel,
+            'channel'         => $waOk && $smsOk ? 'both' : ($waOk ? 'whatsapp' : 'sms'),
         ];
 
-        $msg = $channel === 'whatsapp'
-            ? 'OTP sent to your WhatsApp. Valid for 10 minutes.'
-            : 'OTP sent via SMS. Valid for 10 minutes.';
+        $msg = $waOk && $smsOk
+            ? 'OTP sent to both WhatsApp and SMS. Valid for 10 minutes.'
+            : ($waOk
+                ? 'OTP sent to your WhatsApp. Valid for 10 minutes.'
+                : 'OTP sent via SMS. Valid for 10 minutes.');
 
-        return ['ok' => true, 'channel' => $channel, 'message' => $msg];
+        return ['ok' => true, 'channel' => ($waOk && $smsOk ? 'both' : ($waOk ? 'whatsapp' : 'sms')), 'message' => $msg];
     }
 
     /**
@@ -163,22 +174,35 @@ final class OtpService
             return ['ok' => false, 'error' => 'Please wait before resending OTP.', 'cooldown' => max(1, $wait)];
         }
 
-        $otp    = (string) random_int(100000, 999999);
-        $channel = 'none';
+        $otp = (string) random_int(100000, 999999);
+
+        $waOk = false;
+        $smsOk = false;
+        $waErr = '';
+        $smsErr = '';
 
         $waResult = WhatsAppService::sendOtp($mobileE164, $otp);
         if ($waResult['ok'] ?? false) {
-            $channel = 'whatsapp';
-        } elseif (SmsAlertService::isEnabled()) {
-            $template = (string) ($CONFIG['smsalert']['otp_message'] ?? self::DEFAULT_MESSAGE);
-            $smsResult = SmsAlertService::sendSms($mobileE164, str_replace('{otp}', $otp, $template));
-            if ($smsResult['ok'] ?? false) {
-                $channel = 'sms';
-            } else {
-                return ['ok' => false, 'error' => $smsResult['error'] ?? 'Failed to send OTP.'];
-            }
+            $waOk = true;
         } else {
-            return ['ok' => false, 'error' => $waResult['error'] ?? 'Could not send OTP.'];
+            $waErr = (string) ($waResult['error'] ?? 'WhatsApp OTP failed');
+        }
+
+        if (SmsAlertService::isEnabled()) {
+            $template = (string) ($CONFIG['smsalert']['otp_message'] ?? self::DEFAULT_MESSAGE);
+            $portal = (string) ($CONFIG['smsalert']['otp_portal_name'] ?? 'Shreeshta Family Store');
+            $text = str_replace(['{otp}', '{portal}'], [$otp, $portal], $template);
+            $smsResult = SmsAlertService::sendSms($mobileE164, $text);
+            if ($smsResult['ok'] ?? false) {
+                $smsOk = true;
+            } else {
+                $smsErr = (string) ($smsResult['error'] ?? 'SMS OTP failed');
+            }
+        }
+
+        if (!$waOk && !$smsOk) {
+            $joined = trim(($waErr !== '' ? 'WhatsApp: ' . $waErr : '') . ($smsErr !== '' ? ' | SMS: ' . $smsErr : ''));
+            return ['ok' => false, 'error' => ($joined !== '' ? $joined : 'Could not send OTP.')];
         }
 
         $sends = (is_array($state) && ($state['mobile'] ?? '') === $mobileE164)
@@ -192,10 +216,10 @@ final class OtpService
             'send_count'      => $sends,
             'verify_attempts' => 0,
             'verified'        => false,
-            'channel'         => $channel,
+            'channel'         => $waOk && $smsOk ? 'both' : ($waOk ? 'whatsapp' : 'sms'),
         ];
 
-        return ['ok' => true, 'channel' => $channel];
+        return ['ok' => true, 'channel' => ($waOk && $smsOk ? 'both' : ($waOk ? 'whatsapp' : 'sms'))];
     }
 
     /**
