@@ -8,13 +8,11 @@ declare(strict_types=1);
 require_once __DIR__ . '/../app/bootstrap.php';
 
 AuthService::requireLogin();
-if (AuthService::isSubAdmin()) {
-    redirect(admin_url('registrations.php'));
-}
 $pdo = Database::connection();
 
 $activeDates = OfferCatalog::eventDates(true);
-$scope = (string) ($_GET['scope'] ?? 'current'); // current | all
+// Subadmin: current event only (no all-history)
+$scope = AuthService::isSubAdmin() ? 'current' : (string) ($_GET['scope'] ?? 'current'); // current | all
 
 $customerWhere = '';
 $voucherWhere = '';
@@ -79,6 +77,37 @@ foreach ($productStmt->fetchAll() as $row) {
     $productCounts[$row['selected_product']] = (int) $row['cnt'];
 }
 
+// Allocated capacity = sum of slot capacities (per product) for the scoped event dates
+$productAllocated = [];
+if ($scope !== 'all' && $activeDates) {
+    $ph = [];
+    $aParams = [];
+    foreach ($activeDates as $i => $d) {
+        $key = 'ad' . $i;
+        $ph[] = ':' . $key;
+        $aParams[$key] = $d;
+    }
+    $allocStmt = $pdo->prepare("
+        SELECT product_key, COALESCE(SUM(capacity), 0) AS allocated
+        FROM offer_slots
+        WHERE event_date IN (" . implode(',', $ph) . ")
+        GROUP BY product_key
+    ");
+    $allocStmt->execute($aParams);
+    foreach ($allocStmt->fetchAll() as $row) {
+        $productAllocated[$row['product_key']] = (int) $row['allocated'];
+    }
+} elseif ($scope === 'all') {
+    $allocStmt = $pdo->query("
+        SELECT product_key, COALESCE(SUM(capacity), 0) AS allocated
+        FROM offer_slots
+        GROUP BY product_key
+    ");
+    foreach ($allocStmt->fetchAll() as $row) {
+        $productAllocated[$row['product_key']] = (int) $row['allocated'];
+    }
+}
+
 $lifetimeTotal = (int) $pdo->query("SELECT COUNT(*) FROM customers")->fetchColumn();
 
 $cards = [
@@ -114,14 +143,18 @@ require __DIR__ . '/../templates/header.php';
       <?php endif; ?>
     </div>
     <div class="flex gap-2 text-sm">
-      <a href="?scope=current"
-        class="px-3 py-1.5 rounded-lg font-semibold <?= $scope !== 'all' ? 'bg-maroon text-ivory' : 'bg-white gold-border text-maroon-dark' ?>">
-        This event
-      </a>
-      <a href="?scope=all"
-        class="px-3 py-1.5 rounded-lg font-semibold <?= $scope === 'all' ? 'bg-maroon text-ivory' : 'bg-white gold-border text-maroon-dark' ?>">
-        All history (<?= $lifetimeTotal ?>)
-      </a>
+      <?php if (!AuthService::isSubAdmin()): ?>
+        <a href="?scope=current"
+          class="px-3 py-1.5 rounded-lg font-semibold <?= $scope !== 'all' ? 'bg-maroon text-ivory' : 'bg-white gold-border text-maroon-dark' ?>">
+          This event
+        </a>
+        <a href="?scope=all"
+          class="px-3 py-1.5 rounded-lg font-semibold <?= $scope === 'all' ? 'bg-maroon text-ivory' : 'bg-white gold-border text-maroon-dark' ?>">
+          All history (<?= $lifetimeTotal ?>)
+        </a>
+      <?php else: ?>
+        <span class="px-3 py-1.5 rounded-lg font-semibold bg-maroon text-ivory">This event</span>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -135,19 +168,35 @@ require __DIR__ . '/../templates/header.php';
   </div>
 
   <h3 class="font-heading text-xl font-bold text-maroon mb-4">Product-wise Totals</h3>
+  <p class="text-xs text-maroon-dark/55 mb-3">Registered / Allocated (slot capacity)</p>
   <div class="grid sm:grid-cols-2 gap-3">
     <?php
       $products = Products::all();
       $shown = 0;
       foreach ($products as $key => $p):
-        if ($scope !== 'all' && (int) $p['active'] !== 1 && empty($productCounts[$key])) {
+        $registered = (int) ($productCounts[$key] ?? 0);
+        $allocated = (int) ($productAllocated[$key] ?? 0);
+        if ($scope !== 'all' && (int) $p['active'] !== 1 && $registered === 0 && $allocated === 0) {
             continue;
         }
         $shown++;
+        $remaining = max(0, $allocated - $registered);
+        $isNoLimit = $allocated >= 50000;
     ?>
-      <div class="bg-white gold-border rounded-xl px-4 py-3 flex items-center justify-between">
-        <span class="text-sm sm:text-base"><?= e($p['label']) ?></span>
-        <span class="font-bold text-maroon text-lg"><?= (int) ($productCounts[$key] ?? 0) ?></span>
+      <div class="bg-white gold-border rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <span class="text-sm sm:text-base block"><?= e($p['label']) ?></span>
+          <?php if ($isNoLimit): ?>
+            <span class="text-[11px] text-green-800 font-medium">No stock limit</span>
+          <?php elseif ($allocated > 0): ?>
+            <span class="text-[11px] text-maroon-dark/55">Left: <?= $remaining ?></span>
+          <?php endif; ?>
+        </div>
+        <div class="text-right shrink-0">
+          <span class="font-bold text-maroon text-lg tabular-nums"><?= $registered ?></span>
+          <span class="text-maroon-dark/45 font-semibold text-lg"> / </span>
+          <span class="font-bold text-maroon-dark/70 text-lg tabular-nums"><?= $allocated > 0 ? ($isNoLimit ? 'No limit' : $allocated) : '—' ?></span>
+        </div>
       </div>
     <?php endforeach; ?>
     <?php if ($shown === 0): ?>

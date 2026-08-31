@@ -1,16 +1,21 @@
 <?php
 /**
  * admin/exports.php  ->  route: /admin/exports
- * Admin-only. Streams CSV / JSON exports and a full SQLite backup download.
- * CSV/JSON default to current active event dates only (past mobiles stay in DB
- * as a permanent blocklist, but do not appear in event exports).
+ * Admin + subadmin. CSV/JSON exports.
+ * Subadmin: current event only (no all-history, no DB backup).
  */
 
 declare(strict_types=1);
 require_once __DIR__ . '/../app/bootstrap.php';
 
-AuthService::requireRole('admin');
+AuthService::requireLogin();
+if (!AuthService::isAdmin() && !AuthService::isSubAdmin()) {
+    http_response_code(403);
+    echo 'Forbidden';
+    exit;
+}
 $pdo = Database::connection();
+$isSubAdmin = AuthService::isSubAdmin();
 
 $activeEventDates = OfferCatalog::eventDates(true);
 $allRegisteredDates = OfferCatalog::registeredEventDates();
@@ -23,9 +28,13 @@ sort($dateChoices);
  *  - 'all' → every registration ever
  *  - Y-m-d → that single day
  */
-$eventDateParam = (string) ($_GET['event_date'] ?? 'all');
+$eventDateParam = (string) ($_GET['event_date'] ?? ($isSubAdmin ? 'current' : 'all'));
 if ($eventDateParam === '') {
-    $eventDateParam = 'all';
+    $eventDateParam = $isSubAdmin ? 'current' : 'all';
+}
+// Subadmin locked to current event only
+if ($isSubAdmin) {
+    $eventDateParam = 'current';
 }
 
 function resolveExportDates(string $param, array $activeDates): ?array
@@ -200,6 +209,11 @@ if ($download) {
             exit;
 
         case 'backup_db':
+            if ($isSubAdmin) {
+                http_response_code(403);
+                echo 'Database backup is admin-only.';
+                exit;
+            }
             global $CONFIG;
             $dbPath = $CONFIG['db_path'];
             if (!is_file($dbPath)) {
@@ -235,12 +249,19 @@ $filterLabel = match (true) {
 <?php require __DIR__ . '/../templates/admin_nav.php'; ?>
 
 <main class="flex-1 max-w-3xl mx-auto px-5 py-8">
-  <h2 class="font-heading text-2xl font-bold text-maroon mb-2">Data Exports &amp; Backup</h2>
-  <p class="text-sm text-maroon-dark/70 mb-5">
-    Default download is <strong>All history</strong> (previous + new).
-    Choose <strong>Current event</strong> only when you want this week’s registrations.
-  </p>
+  <h2 class="font-heading text-2xl font-bold text-maroon mb-2">Data Exports<?= $isSubAdmin ? '' : ' &amp; Backup' ?></h2>
+  <?php if ($isSubAdmin): ?>
+    <p class="text-sm text-maroon-dark/70 mb-5">
+      Downloads are limited to the <strong>current event</strong> only.
+    </p>
+  <?php else: ?>
+    <p class="text-sm text-maroon-dark/70 mb-5">
+      Default download is <strong>All history</strong> (previous + new).
+      Choose <strong>Current event</strong> only when you want this week’s registrations.
+    </p>
+  <?php endif; ?>
 
+  <?php if (!$isSubAdmin): ?>
   <form method="get" class="bg-white gold-border rounded-2xl p-4 shadow-sm mb-4 flex flex-col sm:flex-row gap-3 items-end">
     <div class="flex-1 w-full">
       <label class="block text-sm font-semibold text-maroon-dark mb-1">Event date for export</label>
@@ -261,6 +282,7 @@ $filterLabel = match (true) {
     </div>
     <button type="submit" class="bg-maroon hover:bg-maroon-dark text-ivory font-bold px-5 py-2 rounded-lg">Apply</button>
   </form>
+  <?php endif; ?>
 
   <p class="text-xs text-maroon-dark/65 mb-4"><?= e($filterLabel) ?></p>
 
@@ -283,10 +305,12 @@ $filterLabel = match (true) {
       </a>
     <?php endforeach; ?>
 
+    <?php if (!$isSubAdmin): ?>
     <a href="?download=backup_db"
       class="block text-center bg-maroon hover:bg-maroon-dark transition text-ivory rounded-xl px-4 py-3 font-bold mt-4">
       Download Complete Database Backup
     </a>
+    <?php endif; ?>
   </div>
 
   <p class="text-xs text-maroon-dark/60 mt-4">All downloads are audit-logged.</p>

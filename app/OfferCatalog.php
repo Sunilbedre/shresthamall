@@ -288,24 +288,46 @@ final class OfferCatalog
         return ['ok' => true];
     }
 
-    public static function updateSlot(int $id, int $capacity, bool $active, string $slotStart, string $slotEnd): array
+    public static function updateSlot(
+        int $id,
+        int $capacity,
+        bool $active,
+        string $slotStart,
+        string $slotEnd,
+        ?string $eventDate = null,
+        ?string $session = null
+    ): array
     {
         if ($capacity < 0) {
             return ['ok' => false, 'error' => 'Invalid capacity.'];
         }
+        if ($eventDate !== null && $eventDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $eventDate)) {
+            return ['ok' => false, 'error' => 'Invalid event date.'];
+        }
+        if ($session !== null && $session !== '' && !in_array($session, ['morning', 'evening'], true)) {
+            return ['ok' => false, 'error' => 'Invalid session.'];
+        }
+
         $pdo = Database::connection();
-        $stmt = $pdo->prepare("
-            UPDATE offer_slots
-            SET capacity = :c, active = :a, slot_start = :st, slot_end = :en
-            WHERE id = :id
-        ");
-        $stmt->execute([
+        $sets = ['capacity = :c', 'active = :a', 'slot_start = :st', 'slot_end = :en'];
+        $params = [
             'c' => $capacity,
             'a' => $active ? 1 : 0,
             'st' => $slotStart,
             'en' => $slotEnd,
             'id' => $id,
-        ]);
+        ];
+        if ($eventDate !== null && $eventDate !== '') {
+            $sets[] = 'event_date = :ed';
+            $params['ed'] = $eventDate;
+        }
+        if ($session !== null && $session !== '') {
+            $sets[] = 'session = :sess';
+            $params['sess'] = $session;
+        }
+        $sql = 'UPDATE offer_slots SET ' . implode(', ', $sets) . ' WHERE id = :id';
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
         return ['ok' => true];
     }
 

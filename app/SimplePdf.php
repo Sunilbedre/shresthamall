@@ -185,7 +185,7 @@ final class VoucherPdf
         $pdf = new SimplePdf();
         $pdf->addPage();
         $pdf->text(50, 50, 'Shreeshta Family Store', 16, 'B');
-        $pdf->text(50, 72, 'Rs.1 Special Offer Voucher', 14, 'B');
+        $pdf->text(50, 72, 'Special Offer Voucher', 14, 'B');
         $pdf->text(50, 95, $d['store'], 11);
 
         $pdf->text(50, 130, 'Customer Name:', 11);

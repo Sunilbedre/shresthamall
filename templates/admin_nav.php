@@ -1,16 +1,21 @@
 <?php
-/** templates/admin_nav.php — expects $activePage (dashboard|registrations|settings|exports|staff|offers) */
+/** templates/admin_nav.php  expects $activePage (dashboard|registrations|settings|exports|staff|offers) */
 $activePage = $activePage ?? '';
 
 $navItems = [];
-if (AuthService::isAdmin() || AuthService::isStaff()) {
+if (AuthService::isAdmin() || AuthService::isStaff() || AuthService::isSubAdmin()) {
     $navItems['dashboard'] = [admin_url('dashboard.php'), 'Dashboard'];
 }
 if (AuthService::isAdmin() || AuthService::isStaff() || AuthService::isSubAdmin()) {
     $navItems['registrations'] = [admin_url('registrations.php'), 'Registrations'];
 }
-if (AuthService::isAdmin()) {
+if (AuthService::isAdmin() || AuthService::isStaff() || AuthService::isSubAdmin()) {
+    $navItems['offers_report'] = [admin_url('offers_report.php'), 'Offers Report'];
+}
+if (AuthService::isAdmin() || AuthService::isSubAdmin()) {
     $navItems['exports'] = [admin_url('exports.php'), 'Exports'];
+}
+if (AuthService::isAdmin()) {
     $navItems['offers'] = [admin_url('events.php'), 'Events'];
     $navItems['settings'] = [admin_url('settings.php'), 'Settings'];
     $navItems['staff'] = [admin_url('staff.php'), 'Staff'];

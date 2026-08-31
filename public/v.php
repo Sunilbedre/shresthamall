@@ -48,7 +48,7 @@ require __DIR__ . '/../templates/header.php';
   <article class="bg-white gold-border rounded-2xl p-5 shadow-md">
     <div class="text-center border-b border-gold/30 pb-3 mb-4">
       <p class="text-[10px] uppercase tracking-[0.16em] text-gold font-bold">Shreeshta Family Store</p>
-      <h1 class="font-heading text-xl font-bold text-maroon mt-1">₹1 Special Offer Voucher</h1>
+      <h1 class="font-heading text-xl font-bold text-maroon mt-1">Special Offer Voucher</h1>
       <p class="text-xs text-maroon-dark/60 mt-1"><?= e($d['store']) ?></p>
     </div>
 

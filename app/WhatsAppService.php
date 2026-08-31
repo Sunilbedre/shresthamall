@@ -204,17 +204,46 @@ final class WhatsAppService
         return mb_substr($value, 0, $maxLen);
     }
 
-    /** Keep marketing labels short for WhatsApp template limits. */
+    /**
+     * Keep product name short for WhatsApp — no price / offer promo text.
+     * Example: "Semi Kanjeevaram Sarees - Get 2 Sarees for Just ₹599/-"
+     *       → "Semi Kanjeevaram Sarees"
+     */
     private static function waProductLabel(?string $label): string
     {
         $label = trim((string) $label);
         if ($label === '') {
             return '';
         }
-        if (stripos($label, 'Semi Kanjeevaram Sarees') !== false) {
+
+        // Known short names / specific offers
+        if (stripos($label, '599') !== false) {
+            return 'Semi Kanjeevaram (2 for Rs.599)';
+        }
+        if (stripos($label, '899') !== false) {
+            return 'Semi Kanjeevaram (2 for Rs.899)';
+        }
+        if (stripos($label, 'Tissue') !== false || stripos($label, '1299') !== false) {
+            return 'Tissue Saree (2 for Rs.1299)';
+        }
+        if (stripos($label, 'Semi Kanjeevaram') !== false) {
             return 'Semi Kanjeevaram Sarees';
         }
-        return $label;
+        if (stripos($label, '1 Rupee') !== false || stripos($label, '₹1') !== false) {
+            return '1 Rupee Saree';
+        }
+
+        // Strip common offer / price suffixes
+        $clean = preg_replace('/\s*[-–—]\s*(Get|Buy|Offer|Just|Only|For|Rs\.?|₹).*$/iu', '', $label) ?? $label;
+        $clean = preg_replace('/\s*[-–—]\s*.{0,10}\d{2,}.*$/u', '', $clean) ?? $clean; // trailing "- ...599..."
+        $clean = preg_replace('/\s*\(.*₹.*\).*$/u', '', $clean) ?? $clean;
+        $clean = preg_replace('/\s+/', ' ', trim($clean)) ?? $clean;
+
+        if ($clean === '') {
+            $clean = $label;
+        }
+
+        return mb_substr($clean, 0, 60);
     }
 
     /**

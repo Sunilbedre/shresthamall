@@ -135,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $customer = CustomerService::findById((int) $voucher['customer_id']);
                         $result   = ['status' => 'REDEEMED_NOW', 'voucher' => $voucher, 'customer' => $customer];
                         $searchValue = $customer['mobile_number'] ?? '';
-                        $flash    = 'OTP verified ✓ — voucher redeemed successfully!';
+                        $flash    = 'OTP verified ✓ — voucher redeemed. Print dialog + PDF download started.';
                     } else {
                         $flashError  = 'OTP correct, but redemption failed: ' . str_replace('_', ' ', $redeemResult['error'] ?? '');
                         $searchValue = $_POST['mobile_raw'] ?? $mobile;
@@ -277,6 +277,10 @@ require __DIR__ . '/../templates/header.php';
         && in_array($voucher['status'] ?? '', ['ACTIVE'], true);
     $needsOverride = $canRedeem && !in_array($status, ['VALID'], true);
     $justRedeemed  = $status === 'REDEEMED_NOW';
+    $isRedeemed    = $justRedeemed || $status === 'ALREADY_REDEEMED';
+    $pdfUrl        = $voucher
+        ? '/voucher-pdf.php?code=' . rawurlencode((string) $voucher['voucher_code'])
+        : '';
   ?>
 
   <div class="rounded-2xl border-2 <?= $colorCls ?> p-4 mb-4">
@@ -312,12 +316,23 @@ require __DIR__ . '/../templates/header.php';
       </button>
     </form>
 
-    <?php if ($justRedeemed): ?>
-      <!-- Print voucher strip -->
-      <button onclick="window.print()"
-        class="w-full tap-target bg-maroon text-ivory font-bold rounded-xl py-3 mb-2 flex items-center justify-center gap-2">
-        🖨️ Print Voucher Receipt
-      </button>
+    <?php if ($isRedeemed && $pdfUrl !== ''): ?>
+      <div class="space-y-2 mb-3">
+        <?php if ($justRedeemed): ?>
+          <p class="text-xs text-center text-green-800 bg-white/70 rounded-lg px-2 py-1.5">
+            Print dialog opens automatically. If it fails, use the buttons below.
+          </p>
+        <?php endif; ?>
+        <button type="button" onclick="window.print()"
+          class="w-full tap-target bg-maroon text-ivory font-bold rounded-xl py-3 flex items-center justify-center gap-2">
+          🖨️ <?= $justRedeemed ? 'Print Receipt' : 'Print Again' ?>
+        </button>
+        <a href="<?= e($pdfUrl) ?>"
+          class="w-full tap-target border-2 border-maroon text-maroon font-bold rounded-xl py-3 flex items-center justify-center gap-2 hover:bg-maroon/5"
+          id="staffPdfDownload">
+          📄 Download PDF
+        </a>
+      </div>
     <?php endif; ?>
 
     <?php if ($canRedeem && !$justRedeemed): ?>
@@ -378,7 +393,7 @@ require __DIR__ . '/../templates/header.php';
       <p class="text-xs text-center text-maroon-dark/50 mt-1">Send OTP first to enable redemption</p>
       <?php endif; ?>
     <?php elseif ($status === 'ALREADY_REDEEMED'): ?>
-      <p class="text-sm font-bold text-center text-red-700 py-2">⛔ Already redeemed — do not give another product.</p>
+      <p class="text-sm font-bold text-center text-red-700 py-2">⛔ Already redeemed — do not give another product. You can still print / download the receipt.</p>
     <?php elseif (in_array($status, ['BLOCKED','CANCELLED'], true)): ?>
       <p class="text-sm font-bold text-center py-2">This voucher cannot be redeemed.</p>
     <?php endif; ?>
@@ -390,12 +405,16 @@ require __DIR__ . '/../templates/header.php';
 </main>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
-     PRINT VOUCHER — only visible on print
+     PRINT VOUCHER — only visible on print (just redeemed or already redeemed)
      ═════════════════════════════════════════════════════════════════════ -->
-<?php if (($result['status'] ?? '') === 'REDEEMED_NOW' && ($result['customer'] ?? null) && ($result['voucher'] ?? null)):
+<?php
+$printStatuses = ['REDEEMED_NOW', 'ALREADY_REDEEMED'];
+if (in_array(($result['status'] ?? ''), $printStatuses, true) && ($result['customer'] ?? null) && ($result['voucher'] ?? null)):
   $pv = $result['voucher'];
   $pc = $result['customer'];
   $storeName = Settings::get('store_name') . ', ' . Settings::get('branch_name');
+  $autoPrint = (($result['status'] ?? '') === 'REDEEMED_NOW');
+  $autoPdfUrl = '/voucher-pdf.php?code=' . rawurlencode((string) $pv['voucher_code']);
 ?>
 <div id="printVoucher" style="display:none; font-family: Arial, Helvetica, sans-serif; color:#111; width:100%; max-width:180mm; margin:0 auto; border:1px solid #222; border-radius:8px; padding:10mm; box-sizing:border-box;">
   <div style="text-align:center; border-bottom:1px solid #ddd; padding-bottom:8px; margin-bottom:12px;">
@@ -423,6 +442,21 @@ require __DIR__ . '/../templates/header.php';
     <span style="display:inline-block; background:#e9f9ef; color:#0d6b33; border:1px solid #b9e7c8; padding:6px 14px; border-radius:999px; font-size:13px; font-weight:700;">REDEEMED</span>
   </div>
 </div>
+
+<?php if ($autoPrint): ?>
+<script>
+(function () {
+  var pdfUrl = <?= json_encode($autoPdfUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+  // PDF download first (backup if print fails / is cancelled)
+  var frame = document.createElement('iframe');
+  frame.style.display = 'none';
+  frame.src = pdfUrl;
+  document.body.appendChild(frame);
+  // Then open print dialog shortly after
+  setTimeout(function () { window.print(); }, 400);
+})();
+</script>
+<?php endif; ?>
 <?php endif; ?>
 
 <?php

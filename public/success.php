@@ -34,7 +34,7 @@ require __DIR__ . '/../templates/header.php';
       <span class="text-2xl text-maroon">&#10003;</span>
     </div>
     <h2 class="font-heading text-2xl font-bold text-maroon mb-0.5">Congratulations!</h2>
-    <p class="text-maroon-dark/80 text-sm mb-4">Your ₹1 Offer Voucher Is Confirmed</p>
+    <p class="text-maroon-dark/80 text-sm mb-4">Your Special Offer Voucher Is Confirmed</p>
 
     <div class="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-3 py-2.5 text-xs sm:text-sm mb-4 leading-snug">
       <strong>Please take a screenshot</strong> of this page and save it on your phone as a backup.<br>

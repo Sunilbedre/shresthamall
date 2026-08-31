@@ -178,7 +178,7 @@ final class AuthService
     {
         return match (self::currentRole()) {
             'admin' => admin_url('dashboard.php'),
-            'subadmin' => admin_url('registrations.php'),
+            'subadmin' => admin_url('dashboard.php'),
             default => '/verify.php',
         };
     }
@@ -270,6 +270,93 @@ final class AuthService
     {
         $pdo = Database::connection();
         return $pdo->query("SELECT id, username, role, last_login_at FROM admins ORDER BY role ASC, username ASC")->fetchAll();
+    }
+
+    /**
+     * Update role and/or password for an existing account.
+     * @return array{ok:bool, error?:string}
+     */
+    public static function updateUser(int $id, string $role, ?string $password = null): array
+    {
+        $role = match ($role) {
+            'admin' => 'admin',
+            'subadmin' => 'subadmin',
+            default => 'staff',
+        };
+
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare("SELECT id, username, role FROM admins WHERE id = :id LIMIT 1");
+        $stmt->execute(['id' => $id]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$user) {
+            return ['ok' => false, 'error' => 'User not found.'];
+        }
+
+        $currentId = (int) ($_SESSION['admin_id'] ?? 0);
+        if ($currentId > 0 && $currentId === $id && $role !== 'admin') {
+            return ['ok' => false, 'error' => 'You cannot remove your own admin role.'];
+        }
+
+        // Don't demote/remove the last admin
+        if (($user['role'] ?? '') === 'admin' && $role !== 'admin') {
+            $adminCount = (int) $pdo->query("SELECT COUNT(*) FROM admins WHERE role = 'admin'")->fetchColumn();
+            if ($adminCount <= 1) {
+                return ['ok' => false, 'error' => 'Cannot change role of the last admin account.'];
+            }
+        }
+
+        if ($password !== null && $password !== '') {
+            $pw = self::validatePasswordStrength($password);
+            if (!$pw['ok']) {
+                return $pw;
+            }
+            $upd = $pdo->prepare("
+                UPDATE admins
+                SET role = :r, password_hash = :p, failed_attempts = 0, locked_until = NULL
+                WHERE id = :id
+            ");
+            $upd->execute([
+                'r' => $role,
+                'p' => password_hash($password, PASSWORD_DEFAULT),
+                'id' => $id,
+            ]);
+        } else {
+            $upd = $pdo->prepare("UPDATE admins SET role = :r WHERE id = :id");
+            $upd->execute(['r' => $role, 'id' => $id]);
+        }
+
+        return ['ok' => true];
+    }
+
+    /**
+     * Delete an account. Cannot delete yourself or the last admin.
+     * @return array{ok:bool, error?:string, username?:string}
+     */
+    public static function deleteUser(int $id): array
+    {
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare("SELECT id, username, role FROM admins WHERE id = :id LIMIT 1");
+        $stmt->execute(['id' => $id]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$user) {
+            return ['ok' => false, 'error' => 'User not found.'];
+        }
+
+        $currentId = (int) ($_SESSION['admin_id'] ?? 0);
+        if ($currentId > 0 && $currentId === $id) {
+            return ['ok' => false, 'error' => 'You cannot delete your own account.'];
+        }
+
+        if (($user['role'] ?? '') === 'admin') {
+            $adminCount = (int) $pdo->query("SELECT COUNT(*) FROM admins WHERE role = 'admin'")->fetchColumn();
+            if ($adminCount <= 1) {
+                return ['ok' => false, 'error' => 'Cannot delete the last admin account.'];
+            }
+        }
+
+        $del = $pdo->prepare("DELETE FROM admins WHERE id = :id");
+        $del->execute(['id' => $id]);
+        return ['ok' => true, 'username' => (string) $user['username']];
     }
 
     /** Session-based rate limiter (forms / registration). */
