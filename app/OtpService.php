@@ -53,10 +53,13 @@ final class OtpService
         $smsOk = false;
         $waErr = '';
         $smsErr = '';
+        $waMessageId = '';
+        $smsResponse = null;
 
         $waResult = WhatsAppService::sendOtp($mobileE164, $otp);
         if ($waResult['ok'] ?? false) {
             $waOk = true;
+            $waMessageId = (string) ($waResult['message_id'] ?? '');
         } else {
             $waErr = (string) ($waResult['error'] ?? 'WhatsApp OTP failed');
         }
@@ -68,10 +71,26 @@ final class OtpService
             $smsResult = SmsAlertService::sendSms($mobileE164, $text);
             if ($smsResult['ok'] ?? false) {
                 $smsOk = true;
+                $smsResponse = $smsResult['response'] ?? null;
             } else {
                 $smsErr = (string) ($smsResult['error'] ?? 'SMS OTP failed');
+                $smsResponse = $smsResult['response'] ?? null;
             }
         }
+
+        $channel = $waOk && $smsOk ? 'both' : ($waOk ? 'whatsapp' : ($smsOk ? 'sms' : 'none'));
+        self::writeLog([
+            'event'          => 'otp_send',
+            'mobile'         => self::maskMobile($mobileE164),
+            'ip'             => $ip,
+            'channel'        => $channel,
+            'wa_ok'          => $waOk,
+            'wa_error'       => $waErr !== '' ? $waErr : null,
+            'wa_message_id'  => $waMessageId !== '' ? $waMessageId : null,
+            'sms_ok'         => $smsOk,
+            'sms_error'      => $smsErr !== '' ? $smsErr : null,
+            'sms_response'   => self::summarizeSmsResponse($smsResponse),
+        ]);
 
         if (!$waOk && !$smsOk) {
             $joined = trim(($waErr !== '' ? 'WhatsApp: ' . $waErr : '') . ($smsErr !== '' ? ' | SMS: ' . $smsErr : ''));
@@ -86,7 +105,7 @@ final class OtpService
             'send_count'      => (is_array($state) && ($state['mobile'] ?? '') === $mobileE164) ? $sends + 1 : 1,
             'verify_attempts' => 0,
             'verified'        => false,
-            'channel'         => $waOk && $smsOk ? 'both' : ($waOk ? 'whatsapp' : 'sms'),
+            'channel'         => $channel,
         ];
 
         $msg = $waOk && $smsOk
@@ -95,7 +114,7 @@ final class OtpService
                 ? 'OTP sent to your WhatsApp. Valid for 10 minutes.'
                 : 'OTP sent via SMS. Valid for 10 minutes.');
 
-        return ['ok' => true, 'channel' => ($waOk && $smsOk ? 'both' : ($waOk ? 'whatsapp' : 'sms')), 'message' => $msg];
+        return ['ok' => true, 'channel' => $channel, 'message' => $msg];
     }
 
     /**
@@ -255,5 +274,47 @@ final class OtpService
     public static function clearRedemption(): void
     {
         unset($_SESSION['redeem_otp']);
+    }
+
+    /** Mask mobile for logs: +91XXXXXX6915 */
+    private static function maskMobile(string $mobileE164): string
+    {
+        $digits = preg_replace('/\D+/', '', $mobileE164) ?? '';
+        if (strlen($digits) < 4) {
+            return '****';
+        }
+        return substr($digits, 0, 2) . str_repeat('X', max(0, strlen($digits) - 6)) . substr($digits, -4);
+    }
+
+    /** @param mixed $response */
+    private static function summarizeSmsResponse($response): ?array
+    {
+        if (!is_array($response)) {
+            return is_string($response) ? ['raw' => mb_substr($response, 0, 300)] : null;
+        }
+        $desc = $response['description'] ?? null;
+        return [
+            'status'   => $response['status'] ?? null,
+            'batch_id' => is_array($desc) ? ($desc['batch_id'] ?? null) : null,
+            'msgid'    => is_array($desc) ? ($desc['msgid'] ?? null) : null,
+            'desc'     => is_array($desc)
+                ? ($desc['desc'] ?? null)
+                : (is_string($desc) ? mb_substr($desc, 0, 200) : null),
+        ];
+    }
+
+    /** Append one JSON line to storage/logs/otp.log (never logs the OTP itself). */
+    private static function writeLog(array $payload): void
+    {
+        $dir = APP_ROOT . '/storage/logs';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0750, true);
+        }
+        $payload['ts'] = date('c');
+        $line = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($line === false) {
+            return;
+        }
+        @file_put_contents($dir . '/otp.log', $line . "\n", FILE_APPEND | LOCK_EX);
     }
 }

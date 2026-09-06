@@ -187,11 +187,14 @@ final class WhatsAppService
 
         $decoded = json_decode($response, true);
         if ($httpCode >= 200 && $httpCode < 300 && isset($decoded['messages'][0]['id'])) {
-            return ['ok' => true];
+            return [
+                'ok'         => true,
+                'message_id' => (string) $decoded['messages'][0]['id'],
+            ];
         }
 
         $err = (string) ($decoded['error']['message'] ?? $response);
-        return ['ok' => false, 'error' => mb_substr($err, 0, 200)];
+        return ['ok' => false, 'error' => mb_substr($err, 0, 200), 'response' => $decoded];
     }
 
     /** WhatsApp body params: no newlines/tabs; normalize fancy punctuation. */
