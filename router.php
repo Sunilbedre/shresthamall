@@ -80,6 +80,8 @@ $adminMap = [
     '/events.php'    => 'admin/events.php',
     '/Events'        => 'admin/events.php',
     '/Events.php'    => 'admin/events.php',
+    '/campaigns'     => 'admin/campaigns.php',
+    '/campaigns.php' => 'admin/campaigns.php',
 ];
 
 $path = rtrim($uri, '/') ?: '/';
@@ -89,6 +91,14 @@ if (preg_match('#^/v/([A-Za-z0-9\\-]+)/?$#', $uri, $m)) {
     $_GET['code'] = strtoupper($m[1]);
     $_SERVER['ROUTE_VOUCHER_CODE'] = strtoupper($m[1]);
     require __DIR__ . '/public/v.php';
+    return true;
+}
+
+// /o/{campaign-link-slug} — special-event product / hub links
+if (preg_match('#^/o/([a-z0-9\\-]+)/?$#', $uri, $m)) {
+    $_GET['slug'] = $m[1];
+    $_SERVER['CAMPAIGN_LINK_SLUG'] = $m[1];
+    require __DIR__ . '/public/campaign_offer.php';
     return true;
 }
 

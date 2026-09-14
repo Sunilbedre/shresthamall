@@ -7,9 +7,38 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../app/bootstrap.php';
 
+/** @var array|null $campaignContext injected by public/campaign_offer.php for /o/{slug} */
+$campaignContext = $campaignContext ?? null;
+$lockedProductKey = is_array($campaignContext) ? (string) ($campaignContext['locked_product_key'] ?? '') : '';
+$campaignSlug = is_array($campaignContext) ? (string) ($campaignContext['campaign_slug'] ?? '') : '';
+$campaignHeadline = is_array($campaignContext) ? (string) ($campaignContext['headline'] ?? '') : '';
+
 $registrationOpen = Settings::get('registration_status', 'OPEN') === 'OPEN';
 $offerProducts    = OfferCatalog::products(true);
-$availableSlots   = OfferCatalog::availableSlots();
+$availableSlots   = $lockedProductKey !== ''
+    ? OfferCatalog::availableSlots($lockedProductKey)
+    : OfferCatalog::availableSlots();
+
+if ($lockedProductKey !== '') {
+    $offerProducts = array_values(array_filter(
+        $offerProducts,
+        static fn (array $p): bool => (string) $p['product_key'] === $lockedProductKey
+    ));
+} elseif ($campaignSlug === '') {
+    // Weekly /offer: hide products that belong to special campaigns (they use /o/{slug})
+    $campaignKeys = CampaignService::activeCampaignProductKeys();
+    if ($campaignKeys !== []) {
+        $offerProducts = array_values(array_filter(
+            $offerProducts,
+            static fn (array $p): bool => !in_array((string) $p['product_key'], $campaignKeys, true)
+        ));
+        $availableSlots = array_values(array_filter(
+            $availableSlots,
+            static fn (array $s): bool => !in_array((string) $s['product_key'], $campaignKeys, true)
+        ));
+    }
+}
+
 $slotsByProduct   = [];
 foreach ($availableSlots as $slot) {
     $slotsByProduct[$slot['product_key']][] = [
@@ -32,6 +61,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors['_general'] = 'Too many attempts. Please wait a few minutes and try again.';
     } else {
         $oldInput = $_POST;
+        if ($campaignSlug !== '') {
+            $oldInput['campaign_slug'] = $campaignSlug;
+            $_POST['campaign_slug'] = $campaignSlug;
+        }
+        if ($lockedProductKey !== '') {
+            $oldInput['locked_product_key'] = $lockedProductKey;
+            $_POST['locked_product_key'] = $lockedProductKey;
+        }
         $result = CustomerService::register($_POST, $_SERVER['REMOTE_ADDR'] ?? '', $_SERVER['HTTP_USER_AGENT'] ?? '');
 
         if ($result['ok']) {
@@ -59,12 +96,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$pageTitle = 'Special Offer | Shreeshta Family Store';
+$pageTitle = $campaignHeadline !== ''
+    ? ($campaignHeadline . ' | Shreeshta Family Store')
+    : 'Special Offer | Shreeshta Family Store';
 $compactHeader = true;
 require __DIR__ . '/../templates/header.php';
 ?>
 
 <main class="max-w-md mx-auto px-3.5 sm:px-4 pt-3 pb-24 sm:pb-8">
+
+  <?php if ($campaignHeadline !== ''): ?>
+    <div class="mb-3 rounded-xl bg-maroon text-ivory px-4 py-3 text-center shadow-sm">
+      <p class="text-[10px] uppercase tracking-widest text-gold-light font-semibold">Special Event</p>
+      <h1 class="font-heading text-lg font-bold leading-tight mt-0.5"><?= e($campaignHeadline) ?></h1>
+      <?php if (!empty($campaignContext['product_label'])): ?>
+        <p class="text-gold-light/90 text-xs mt-1"><?= e((string) $campaignContext['product_label']) ?> · Limited stock</p>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
 
   <?php if (!$registrationOpen && empty($duplicateCustomer)): ?>
     <div class="bg-white gold-border rounded-2xl p-6 text-center shadow-sm mt-4">
@@ -105,8 +154,13 @@ require __DIR__ . '/../templates/header.php';
         </div>
         <h3 class="font-heading text-lg font-bold text-maroon mb-2">Voucher already used for this number</h3>
         <p class="text-maroon-dark/80 text-sm leading-relaxed">
-          This mobile number already received a voucher in a previous offer.
-          Only <strong>one coupon per mobile number</strong> is allowed — for this event and future events.
+          <?php if ($campaignSlug !== ''): ?>
+            This mobile number already registered for <strong>this special offer</strong>.
+            Only one voucher per mobile is allowed for this event.
+          <?php else: ?>
+            This mobile number already received a voucher in a previous offer.
+            Only <strong>one coupon per mobile number</strong> is allowed — for this event and future events.
+          <?php endif; ?>
         </p>
         <p class="text-xs text-maroon-dark/55 mt-3">
           Please check WhatsApp for your existing voucher, or visit the store counter for help.
@@ -141,6 +195,12 @@ require __DIR__ . '/../templates/header.php';
           <form method="post" class="space-y-4" id="regForm" novalidate>
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="register">
+            <?php if ($campaignSlug !== ''): ?>
+              <input type="hidden" name="campaign_slug" value="<?= e($campaignSlug) ?>">
+            <?php endif; ?>
+            <?php if ($lockedProductKey !== ''): ?>
+              <input type="hidden" name="locked_product_key" value="<?= e($lockedProductKey) ?>">
+            <?php endif; ?>
 
             <div>
               <label for="full_name" class="block text-sm font-semibold text-maroon-dark mb-1">Full name</label>
@@ -206,18 +266,29 @@ require __DIR__ . '/../templates/header.php';
             </div>
 
             <div>
-              <label for="selected_offer" class="block text-sm font-semibold text-maroon-dark mb-1">Choose offer / product</label>
-              <select id="selected_offer" required
-                class="w-full tap-target rounded-xl gold-border gold-ring px-3.5 py-3 bg-white">
-                <option value="">Select product</option>
-                <?php foreach ($offerProducts as $p): ?>
-                  <?php if (empty($slotsByProduct[$p['product_key']])) continue; ?>
-                  <option value="<?= e($p['product_key']) ?>"
-                    <?= (($oldInput['selected_product'] ?? $oldInput['selected_offer'] ?? '') === $p['product_key']) ? 'selected' : '' ?>>
-                    <?= e($p['label']) ?>
-                  </option>
-                <?php endforeach; ?>
-              </select>
+              <label for="selected_offer" class="block text-sm font-semibold text-maroon-dark mb-1">
+                <?= $lockedProductKey !== '' ? 'Your offer / product' : 'Choose offer / product' ?>
+              </label>
+              <?php if ($lockedProductKey !== '' && count($offerProducts) === 1): ?>
+                <?php $lockedProduct = $offerProducts[0]; ?>
+                <input type="hidden" id="selected_offer" value="<?= e((string) $lockedProduct['product_key']) ?>">
+                <div class="w-full tap-target rounded-xl gold-border px-3.5 py-3 bg-ivory text-maroon font-semibold">
+                  <?= e((string) $lockedProduct['label']) ?>
+                </div>
+              <?php else: ?>
+                <select id="selected_offer" required
+                  class="w-full tap-target rounded-xl gold-border gold-ring px-3.5 py-3 bg-white"
+                  <?= $lockedProductKey !== '' ? 'disabled' : '' ?>>
+                  <option value="">Select product</option>
+                  <?php foreach ($offerProducts as $p): ?>
+                    <?php if (empty($slotsByProduct[$p['product_key']])) continue; ?>
+                    <option value="<?= e($p['product_key']) ?>"
+                      <?= (($oldInput['selected_product'] ?? $oldInput['selected_offer'] ?? $lockedProductKey) === $p['product_key']) ? 'selected' : '' ?>>
+                      <?= e($p['label']) ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              <?php endif; ?>
             </div>
 
             <div>
@@ -282,6 +353,7 @@ require __DIR__ . '/../templates/header.php';
 
 <script>
   const slotsByProduct = <?= json_encode($slotsByProduct, JSON_UNESCAPED_UNICODE) ?>;
+  const campaignSlug = <?= json_encode($campaignSlug, JSON_UNESCAPED_UNICODE) ?>;
   const productSelect = document.getElementById('selected_offer');
   const slotSelect = document.getElementById('offer_slot_id');
   const preselectedSlot = <?= json_encode((string) ($oldInput['offer_slot_id'] ?? '')) ?>;
@@ -348,7 +420,8 @@ require __DIR__ . '/../templates/header.php';
     if (!force && digits === lastChecked) return;
     lastChecked = digits;
 
-    fetch('/check-mobile.php?mobile=' + encodeURIComponent(digits), {
+    const campQs = campaignSlug ? ('&campaign=' + encodeURIComponent(campaignSlug)) : '';
+    fetch('/check-mobile.php?mobile=' + encodeURIComponent(digits) + campQs, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       credentials: 'same-origin',

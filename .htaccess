@@ -43,6 +43,7 @@ RewriteRule ^webhook\.php$ public/webhook.php [L]
 RewriteRule ^voucher-pdf/?$ public/voucher_pdf.php [L,QSA]
 RewriteRule ^voucher-pdf\.php$ public/voucher_pdf.php [L,QSA]
 RewriteRule ^v/([A-Za-z0-9\-]+)/?$ public/v.php?code=$1 [L,QSA]
+RewriteRule ^o/([a-z0-9\-]+)/?$ public/campaign_offer.php?slug=$1 [L,QSA]
 
 # ---- Home page -------------------------------------------------------------
 RewriteRule ^$ public/index.php [L]

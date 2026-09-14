@@ -1,12 +1,10 @@
 <?php
 /**
  * app/CustomerService.php
- * Registration workflow. The one-mobile-one-voucher rule is enforced at
- * TWO levels:
- *   1. Application level: SELECT check before insert (fast path, friendly message)
- *   2. Database level: UNIQUE constraint on customers.mobile_number (hard backstop
- *      against race conditions — two simultaneous submits with the same number)
- * Both must hold. Never remove the DB unique index.
+ * Registration workflow. Duplicate mobile rule:
+ *   - Weekly / default (campaign_slug = ''): one voucher per mobile lifetime for that bucket
+ *   - Special campaigns (campaign_slug set): one voucher per mobile per campaign
+ * Enforced in application code and by UNIQUE(mobile_number, campaign_slug).
  */
 
 declare(strict_types=1);
@@ -73,11 +71,22 @@ final class CustomerService
         $productKey = (string) $slot['product_key'];
         $session = (string) $slot['session'];
         $eventDate = (string) $slot['event_date'];
+        $campaignSlug = CampaignService::normaliseSlug((string) ($input['campaign_slug'] ?? ''));
+
+        // Optional lock: campaign product link must match the chosen slot's product
+        $lockedProduct = trim((string) ($input['locked_product_key'] ?? ''));
+        if ($lockedProduct !== '' && $lockedProduct !== $productKey) {
+            return [
+                'ok' => false,
+                'error' => self::ERR_VALIDATION,
+                'fields' => ['offer_slot_id' => 'Please use the correct product link for this offer.'],
+            ];
+        }
 
         $pdo = Database::connection();
 
         // ---- Fast-path duplicate check (pre-transaction, friendly UX) ----
-        $existing = self::findByMobile($mobile);
+        $existing = self::findByMobileForCampaign($mobile, $campaignSlug);
         if ($existing !== null) {
             return ['ok' => false, 'error' => self::ERR_DUPLICATE_MOBILE, 'customer' => $existing];
         }
@@ -102,9 +111,9 @@ final class CustomerService
 
             $insertCustomer = $pdo->prepare("
                 INSERT INTO customers
-                    (full_name, mobile_number, selected_product, session, event_date, offer_slot_id, area, age_group, gender, consent, ip_address, user_agent, registered_at)
+                    (full_name, mobile_number, selected_product, session, event_date, offer_slot_id, area, age_group, gender, consent, campaign_slug, ip_address, user_agent, registered_at)
                 VALUES
-                    (:full_name, :mobile_number, :selected_product, :session, :event_date, :offer_slot_id, :area, :age_group, :gender, 1, :ip, :ua, datetime('now'))
+                    (:full_name, :mobile_number, :selected_product, :session, :event_date, :offer_slot_id, :area, :age_group, :gender, 1, :campaign_slug, :ip, :ua, datetime('now'))
             ");
             $insertCustomer->execute([
                 'full_name' => $name,
@@ -116,6 +125,7 @@ final class CustomerService
                 'area' => $area ?: null,
                 'age_group' => $ageGroup ?: null,
                 'gender' => $gender ?: null,
+                'campaign_slug' => $campaignSlug,
                 'ip' => $ip,
                 'ua' => mb_substr($userAgent, 0, 255),
             ]);
@@ -147,7 +157,7 @@ final class CustomerService
             $pdo->rollBack();
             // UNIQUE constraint race: someone else registered this exact mobile microseconds earlier.
             if (str_contains($e->getMessage(), 'UNIQUE')) {
-                $existing = self::findByMobile($mobile);
+                $existing = self::findByMobileForCampaign($mobile, $campaignSlug);
                 return ['ok' => false, 'error' => self::ERR_DUPLICATE_MOBILE, 'customer' => $existing];
             }
             throw $e;
@@ -159,11 +169,28 @@ final class CustomerService
         return ['ok' => true, 'customer' => $customer, 'voucher' => $voucher];
     }
 
+    /** Latest registration for this mobile (any campaign). */
     public static function findByMobile(string $normalisedMobile): ?array
     {
         $pdo = Database::connection();
-        $stmt = $pdo->prepare("SELECT * FROM customers WHERE mobile_number = :m LIMIT 1");
+        $stmt = $pdo->prepare("SELECT * FROM customers WHERE mobile_number = :m ORDER BY id DESC LIMIT 1");
         $stmt->execute(['m' => $normalisedMobile]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    /** Duplicate check scoped to a campaign bucket ('' = weekly/default). */
+    public static function findByMobileForCampaign(string $normalisedMobile, string $campaignSlug = ''): ?array
+    {
+        $pdo = Database::connection();
+        $campaignSlug = CampaignService::normaliseSlug($campaignSlug);
+        $stmt = $pdo->prepare("
+            SELECT * FROM customers
+            WHERE mobile_number = :m AND campaign_slug = :c
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $stmt->execute(['m' => $normalisedMobile, 'c' => $campaignSlug]);
         $row = $stmt->fetch();
         return $row ?: null;
     }
