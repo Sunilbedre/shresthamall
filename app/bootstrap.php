@@ -11,6 +11,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/OfferCatalog.php';
+require_once __DIR__ . '/CampaignService.php';
 require_once __DIR__ . '/Products.php';
 require_once __DIR__ . '/Areas.php';
 require_once __DIR__ . '/Settings.php';
@@ -27,7 +28,7 @@ require_once __DIR__ . '/SimplePdf.php';
 // Ensure schema exists (cheap: only creates tables if missing)
 Database::migrate();
 OfferCatalog::ensureSchema();
-
+CampaignService::ensureSchema();
 // ---- Hide /admin/* from the public web — only secret ADMIN_PATH gate is allowed ----
 $scriptFile = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_FILENAME'] ?? ''));
 $adminDir = rtrim(str_replace('\\', '/', APP_ROOT), '/') . '/admin/';

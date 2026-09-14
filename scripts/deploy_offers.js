@@ -14,26 +14,32 @@ const FILES = [
   'app/OfferCatalog.php',
   'app/Products.php',
   'app/CustomerService.php',
+  'app/CampaignService.php',
   'app/VoucherService.php',
   'app/VoucherPresenter.php',
   'app/WhatsAppService.php',
   'app/Database.php',
   'app/bootstrap.php',
   'public/offer.php',
+  'public/campaign_offer.php',
   'public/verify.php',
   'public/check_mobile.php',
   'admin/offers.php',
   'admin/events.php',
+  'admin/campaigns.php',
   'admin/exports.php',
   'admin/registrations.php',
   'admin/settings.php',
   'templates/admin_nav.php',
   'router.php',
+  '.htaccess',
   'scripts/seed_offers.php',
+  'scripts/setup_oct2_rupee1_event.php',
   'scripts/verify_customers_count.php',
   'sfs-ops-m9k2x7q4/offers.php',
   'sfs-ops-m9k2x7q4/events.php',
   'sfs-ops-m9k2x7q4/Events.php',
+  'sfs-ops-m9k2x7q4/campaigns.php',
 ];
 
 fs.writeFileSync(
@@ -74,7 +80,8 @@ conn
         const cmd = [
           `cd ${REMOTE}`,
           'php scripts/verify_customers_count.php',
-          'php scripts/seed_offers.php --force',
+          // Additive: creates Oct 2 campaign + links without closing weekly Events
+          'php scripts/setup_oct2_rupee1_event.php',
           'php scripts/verify_customers_count.php',
         ].join(' && ');
 

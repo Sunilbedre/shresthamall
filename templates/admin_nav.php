@@ -17,6 +17,7 @@ if (AuthService::isAdmin() || AuthService::isSubAdmin()) {
 }
 if (AuthService::isAdmin()) {
     $navItems['offers'] = [admin_url('events.php'), 'Events'];
+    $navItems['campaigns'] = [admin_url('campaigns.php'), 'Campaigns'];
     $navItems['settings'] = [admin_url('settings.php'), 'Settings'];
     $navItems['staff'] = [admin_url('staff.php'), 'Staff'];
 }
