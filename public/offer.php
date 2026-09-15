@@ -159,28 +159,6 @@ require __DIR__ . '/../templates/header.php';
               </div>
               <p id="mobile_dup_msg" class="hidden text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs mt-2 leading-snug" role="alert"></p>
               <?php if (!empty($errors['mobile_number'])): ?><p class="text-red-600 text-xs mt-1"><?= e($errors['mobile_number']) ?></p><?php endif; ?>
-
-              <?php if (SmsAlertService::isEnabled()): ?>
-              <div id="otp_block" class="mt-3 space-y-2">
-                <div class="flex gap-2">
-                  <button type="button" id="send_otp_btn"
-                    class="shrink-0 tap-target px-4 py-2.5 rounded-xl bg-maroon text-ivory text-sm font-bold gold-border disabled:opacity-50">
-                    Send OTP
-                  </button>
-                  <input type="tel" id="otp_code" name="otp_code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}"
-                    autocomplete="one-time-code"
-                    placeholder="6-digit OTP"
-                    class="flex-1 tap-target rounded-xl gold-border gold-ring px-3.5 py-2.5 min-w-0">
-                  <button type="button" id="verify_otp_btn"
-                    class="shrink-0 tap-target px-4 py-2.5 rounded-xl bg-ivory text-maroon-dark text-sm font-bold gold-border disabled:opacity-50">
-                    Verify
-                  </button>
-                </div>
-                <p id="otp_msg" class="text-xs text-maroon-dark/70 leading-snug"></p>
-                <input type="hidden" id="otp_verified" name="otp_verified" value="<?= !empty($oldInput['otp_verified']) ? '1' : '0' ?>">
-                <?php if (!empty($errors['otp'])): ?><p class="text-red-600 text-xs"><?= e($errors['otp']) ?></p><?php endif; ?>
-              </div>
-              <?php endif; ?>
             </div>
 
             <div>
@@ -226,6 +204,8 @@ require __DIR__ . '/../templates/header.php';
               <?php if (!empty($errors['offer_slot_id'])): ?><p class="text-red-600 text-xs mt-1"><?= e($errors['offer_slot_id']) ?></p><?php endif; ?>
               <p class="text-[11px] text-maroon-dark/55 mt-1">Select your preferred date and time.</p>
             </div>
+
+            <?php require __DIR__ . '/../templates/registration_otp.php'; ?>
 
             <div class="flex items-start gap-2.5 rounded-xl bg-ivory px-3 py-2.5">
               <input type="checkbox" id="consent" name="consent" value="1" required
@@ -381,7 +361,7 @@ require __DIR__ . '/../templates/header.php';
         e.preventDefault();
         const otpMsg = document.getElementById('otp_msg');
         if (otpMsg) {
-          otpMsg.textContent = 'Please verify OTP before submitting.';
+          otpMsg.textContent = 'Please verify OTP to register before submitting.';
           otpMsg.className = 'text-xs text-red-600 leading-snug';
         }
         document.getElementById('otp_code')?.focus();
