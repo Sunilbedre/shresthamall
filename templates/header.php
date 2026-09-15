@@ -49,6 +49,8 @@ $pageTitle = $pageTitle ?? 'Shreeshta Family Store – ₹1 Special Offer';
   }
   /* Hide default disclosure triangle inconsistently across browsers */
   summary::-webkit-details-marker { display: none; }
+  .subtitle-oneline { scrollbar-width: none; -ms-overflow-style: none; }
+  .subtitle-oneline::-webkit-scrollbar { display: none; }
 </style>
 </head>
 <body class="min-h-screen flex flex-col text-maroon-dark antialiased">
@@ -61,7 +63,7 @@ $pageTitle = $pageTitle ?? 'Shreeshta Family Store – ₹1 Special Offer';
       <?php if (!empty($headerTitle)): ?>
         <h1 class="font-heading text-[15px] sm:text-base font-bold leading-tight"><?= e($headerTitle) ?></h1>
         <?php if (!empty($headerSubtitle)): ?>
-          <p class="text-gold-light/95 text-sm sm:text-[15px] font-medium mt-1 leading-snug"><?= e($headerSubtitle) ?></p>
+          <p class="text-gold-light text-[14px] sm:text-[16px] font-semibold mt-1.5 leading-none whitespace-nowrap overflow-x-auto max-w-full subtitle-oneline"><?= e($headerSubtitle) ?></p>
         <?php endif; ?>
       <?php else: ?>
         <p class="font-heading text-[15px] font-bold leading-tight truncate">Malleshwaram · ₹1 Offer</p>

@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $pageTitle = 'Special Offer | Shreeshta Family Store';
 $compactHeader = true;
 $headerTitle = 'Register for offer';
-$headerSubtitle = 'WhatsApp voucher · One mobile number · One voucher';
+$headerSubtitle = 'WhatsApp voucher · One mobile number · One voucher · One customer';
 require __DIR__ . '/../templates/header.php';
 ?>
 
