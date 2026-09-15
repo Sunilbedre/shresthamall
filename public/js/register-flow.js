@@ -28,7 +28,7 @@
   function setOtpMsg(text, ok) {
     if (!otpMsg) return;
     otpMsg.textContent = text || '';
-    otpMsg.className = 'text-xs text-center leading-snug min-h-[1rem] ' + (ok ? 'text-green-700' : 'text-red-600');
+    otpMsg.className = 'text-sm text-center leading-snug min-h-[1.25rem] ' + (ok ? 'text-green-700' : 'text-red-600');
   }
 
   function setBtnText(text) {

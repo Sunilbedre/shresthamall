@@ -61,7 +61,7 @@ $pageTitle = $pageTitle ?? 'Shreeshta Family Store – ₹1 Special Offer';
       <?php if (!empty($headerTitle)): ?>
         <h1 class="font-heading text-[15px] sm:text-base font-bold leading-tight"><?= e($headerTitle) ?></h1>
         <?php if (!empty($headerSubtitle)): ?>
-          <p class="text-gold-light/95 text-[10px] sm:text-[11px] mt-0.5 leading-snug"><?= e($headerSubtitle) ?></p>
+          <p class="text-gold-light/95 text-sm sm:text-[15px] font-medium mt-1 leading-snug"><?= e($headerSubtitle) ?></p>
         <?php endif; ?>
       <?php else: ?>
         <p class="font-heading text-[15px] font-bold leading-tight truncate">Malleshwaram · ₹1 Offer</p>

@@ -6,7 +6,7 @@ if (!SmsAlertService::isEnabled()) {
 ?>
 <div id="otp_block" class="rounded-xl bg-ivory gold-border px-3.5 py-4 space-y-2">
   <p class="text-sm font-semibold text-maroon-dark text-center">Verify OTP to register</p>
-  <p id="otp_hint" class="text-xs text-maroon-dark/60 text-center leading-snug">
+  <p id="otp_hint" class="text-sm sm:text-base text-maroon-dark/75 text-center leading-relaxed font-medium px-1">
     Tap the button below — OTP will be sent and the field will open here.
   </p>
 
