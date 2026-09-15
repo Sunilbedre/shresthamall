@@ -91,6 +91,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $pageTitle = $productLabel . ' | ' . $campaignTitle;
 $compactHeader = true;
+$headerTitle = 'Register for offer';
+$headerSubtitle = 'WhatsApp voucher · One mobile number · One voucher';
 require __DIR__ . '/../templates/header.php';
 ?>
 
@@ -132,12 +134,12 @@ require __DIR__ . '/../templates/header.php';
   <?php else: ?>
 
     <section class="bg-white gold-border rounded-2xl shadow-sm overflow-hidden mt-2">
-      <div class="bg-maroon text-ivory px-4 py-3.5 text-center">
-        <p class="text-gold-light text-[10px] font-semibold uppercase tracking-widest"><?= e($campaignTitle) ?></p>
-        <h2 class="font-heading text-lg font-bold leading-tight mt-1"><?= e($productLabel) ?></h2>
-        <p class="text-gold-light/95 text-xs mt-1"><?= e($eventDateFormatted) ?></p>
+      <div class="px-3.5 sm:px-5 pt-4 pb-1 text-center border-b border-gold/25">
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-maroon-dark/55"><?= e($campaignTitle) ?></p>
+        <h2 class="font-heading text-lg font-bold leading-tight text-maroon mt-1"><?= e($productLabel) ?></h2>
+        <p class="text-xs text-maroon-dark/65 mt-1"><?= e($eventDateFormatted) ?></p>
         <?php if ($remaining < 99999): ?>
-          <p class="text-gold-light/80 text-[11px] mt-1"><?= (int) $remaining ?> spots left today</p>
+          <p class="text-[11px] text-maroon-dark/55 mt-1"><?= (int) $remaining ?> spots left today</p>
         <?php endif; ?>
       </div>
 

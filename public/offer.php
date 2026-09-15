@@ -61,6 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $pageTitle = 'Special Offer | Shreeshta Family Store';
 $compactHeader = true;
+$headerTitle = 'Register for offer';
+$headerSubtitle = 'WhatsApp voucher · One mobile number · One voucher';
 require __DIR__ . '/../templates/header.php';
 ?>
 
@@ -123,12 +125,7 @@ require __DIR__ . '/../templates/header.php';
       </div>
     <?php elseif (!$duplicateCustomer && $registrationOpen): ?>
 
-      <section class="bg-white gold-border rounded-2xl shadow-sm overflow-hidden">
-        <div class="bg-maroon text-ivory px-4 py-3.5 text-center">
-          <h2 class="font-heading text-xl font-bold leading-tight">Register for offer</h2>
-          <p class="text-gold-light/95 text-xs mt-1">WhatsApp voucher · One mobile number · One voucher</p>
-        </div>
-
+      <section class="bg-white gold-border rounded-2xl shadow-sm overflow-hidden mt-2">
         <div class="px-3.5 sm:px-5 py-4">
           <p class="text-[11px] sm:text-xs text-center text-maroon-dark/55 mb-4 leading-snug">
             One customer · One mobile number · One voucher · One product
