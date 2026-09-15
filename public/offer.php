@@ -159,7 +159,7 @@ require __DIR__ . '/../templates/header.php';
                   class="flex-1 tap-target px-3.5 py-3 outline-none min-w-0"
                   placeholder="10-digit number">
               </div>
-              <p id="mobile_dup_msg" class="hidden text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs mt-2 leading-snug" role="alert"></p>
+              <?php require __DIR__ . '/../templates/mobile_dup_alert.php'; ?>
               <?php if (!empty($errors['mobile_number'])): ?><p class="text-red-600 text-xs mt-1"><?= e($errors['mobile_number']) ?></p><?php endif; ?>
             </div>
 

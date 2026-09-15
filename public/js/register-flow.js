@@ -39,6 +39,11 @@
     actionBtns.forEach((b) => { b.disabled = on; });
   }
 
+  function isDuplicateMessage(text) {
+    const t = (text || '').toLowerCase();
+    return t.includes('already') && (t.includes('registered') || t.includes('voucher') || t.includes('coupon'));
+  }
+
   function setMobileDupState(registered, message) {
     mobileRegistered = registered;
     if (!mobileDupMsg) return;
@@ -46,10 +51,13 @@
       mobileDupMsg.textContent = message || 'This mobile number is already registered.';
       mobileDupMsg.classList.remove('hidden');
       mobileWrap && mobileWrap.classList.add('border-red-500');
+      setOtpMsg('', true);
+      setBtnDisabled(true);
     } else {
       mobileDupMsg.textContent = '';
       mobileDupMsg.classList.add('hidden');
       mobileWrap && mobileWrap.classList.remove('border-red-500');
+      if (!busy) setBtnDisabled(false);
     }
   }
 
@@ -57,17 +65,27 @@
     return (mobileInput?.value || '').replace(/\D/g, '').slice(0, 10);
   }
 
-  function checkMobileDuplicate() {
+  let dupCheckTimer = null;
+  let lastDupChecked = '';
+
+  function checkMobileDuplicate(force) {
     const digits = mobileDigits();
     if (!/^[6-9][0-9]{9}$/.test(digits)) {
+      lastDupChecked = '';
       setMobileDupState(false, '');
       return;
     }
+    if (!force && digits === lastDupChecked) return;
+    lastDupChecked = digits;
+
     let url = '/check-mobile.php?mobile=' + encodeURIComponent(digits);
     if (campaignSlug) url += '&campaign=' + encodeURIComponent(campaignSlug);
     fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
       .then((r) => r.json())
-      .then((data) => setMobileDupState(!!data.registered, data.message || ''))
+      .then((data) => {
+        if (mobileDigits() !== digits) return;
+        setMobileDupState(!!data.registered, data.message || '');
+      })
       .catch(() => {});
   }
 
@@ -127,13 +145,19 @@
     const body = new FormData();
     body.append('csrf_token', csrfInput ? csrfInput.value : '');
     body.append('mobile', digits);
+    if (campaignSlug) body.append('campaign', campaignSlug);
     return fetch('/send-otp.php', { method: 'POST', body, credentials: 'same-origin' })
       .then((r) => r.json())
       .then((data) => {
         if (!data.ok) {
-          setOtpMsg(data.error || 'Could not send OTP.', false);
-          setBtnDisabled(false);
-          setBtnText('Verify OTP to Register');
+          const err = data.error || 'Could not send OTP.';
+          if (isDuplicateMessage(err)) {
+            setMobileDupState(true, err);
+          } else {
+            setOtpMsg(err, false);
+            setBtnDisabled(false);
+            setBtnText('Verify OTP to Register');
+          }
           return false;
         }
         otpSent = true;
@@ -225,10 +249,18 @@
     mobileInput.addEventListener('input', () => {
       mobileInput.value = mobileInput.value.replace(/\D/g, '').slice(0, 10);
       resetOtpState();
-      setTimeout(checkMobileDuplicate, 350);
+      lastDupChecked = '';
+      if (dupCheckTimer) clearTimeout(dupCheckTimer);
+      const digits = mobileDigits();
+      if (digits.length === 10) {
+        checkMobileDuplicate(true);
+      } else {
+        setMobileDupState(false, '');
+        dupCheckTimer = setTimeout(() => checkMobileDuplicate(false), 200);
+      }
     });
-    mobileInput.addEventListener('blur', checkMobileDuplicate);
-    if (mobileDigits().length === 10) checkMobileDuplicate();
+    mobileInput.addEventListener('blur', () => checkMobileDuplicate(true));
+    if (mobileDigits().length === 10) checkMobileDuplicate(true);
   }
 
   actionBtns.forEach((btn) => btn.addEventListener('click', onActionClick));
