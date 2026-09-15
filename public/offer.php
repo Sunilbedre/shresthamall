@@ -135,7 +135,9 @@ require __DIR__ . '/../templates/header.php';
             <p class="text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-sm mb-4"><?= e($errors['_general']) ?></p>
           <?php endif; ?>
 
-          <form method="post" class="space-y-4" id="regForm" novalidate>
+          <form method="post" class="space-y-4" id="regForm" novalidate
+            data-otp-enabled="<?= SmsAlertService::isEnabled() ? '1' : '0' ?>"
+            data-campaign="">
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="register">
 
@@ -221,15 +223,7 @@ require __DIR__ . '/../templates/header.php';
               <p class="text-red-600 text-xs -mt-2"><?= e($errors['consent']) ?></p>
             <?php endif; ?>
 
-            <!-- Keep submit INSIDE the form so CSRF + fields always post (esp. on mobile). -->
-            <div class="pt-1 sm:pt-0">
-              <div class="hidden sm:block">
-                <button type="submit"
-                  class="w-full tap-target bg-maroon hover:bg-maroon-dark text-ivory font-bold py-3.5 rounded-xl gold-border shadow-md">
-                  Get My Voucher
-                </button>
-              </div>
-            </div>
+            <?php require __DIR__ . '/../templates/registration_submit.php'; ?>
           </form>
         </div>
       </section>
@@ -245,13 +239,6 @@ require __DIR__ . '/../templates/header.php';
           <li>Please present the <strong class="text-maroon-dark/80">original WhatsApp voucher, QR code, or printed PDF</strong> at the counter for redemption.</li>
         </ul>
       </details>
-
-      <div class="fixed inset-x-0 bottom-0 z-50 sm:hidden bg-white/95 backdrop-blur border-t border-gold/40 px-3.5 pt-2.5 safe-bottom shadow-[0_-8px_24px_rgba(82,0,24,0.1)]">
-        <button type="submit" form="regForm"
-          class="w-full tap-target bg-maroon active:bg-maroon-dark text-ivory font-bold text-[15px] py-3.5 rounded-xl gold-border">
-          Get My Voucher on WhatsApp
-        </button>
-      </div>
 
     <?php endif; ?>
   <?php endif; ?>
@@ -286,199 +273,7 @@ require __DIR__ . '/../templates/header.php';
     fillSlots();
   }
 
-  const mobileInput = document.getElementById('mobile_number');
-  const mobileDupMsg = document.getElementById('mobile_dup_msg');
-  const mobileWrap = document.getElementById('mobile_wrap');
-  const regForm = document.getElementById('regForm');
-  let mobileRegistered = false;
-  let checkTimer = null;
-  let lastChecked = '';
 
-  function setMobileDupState(registered, message) {
-    mobileRegistered = registered;
-    if (!mobileDupMsg) return;
-    if (registered) {
-      mobileDupMsg.textContent = message || 'This mobile number is already registered. Voucher already used for this number.';
-      mobileDupMsg.classList.remove('hidden');
-      if (mobileWrap) mobileWrap.classList.add('border-red-500');
-    } else {
-      mobileDupMsg.textContent = '';
-      mobileDupMsg.classList.add('hidden');
-      if (mobileWrap) mobileWrap.classList.remove('border-red-500');
-    }
-  }
-
-  function checkMobileDuplicate(force) {
-    if (!mobileInput) return;
-    const digits = mobileInput.value.replace(/\D/g, '').slice(0, 10);
-    mobileInput.value = digits;
-
-    if (digits.length < 10) {
-      lastChecked = '';
-      setMobileDupState(false, '');
-      return;
-    }
-    if (!/^[6-9][0-9]{9}$/.test(digits)) {
-      setMobileDupState(false, '');
-      return;
-    }
-    if (!force && digits === lastChecked) return;
-    lastChecked = digits;
-
-    fetch('/check-mobile.php?mobile=' + encodeURIComponent(digits), {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      credentials: 'same-origin',
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (mobileInput.value !== digits) return;
-        setMobileDupState(!!data.registered, data.message || '');
-      })
-      .catch(() => {});
-  }
-
-  if (mobileInput) {
-    mobileInput.addEventListener('input', () => {
-      mobileInput.value = mobileInput.value.replace(/\D/g, '').slice(0, 10);
-      if (checkTimer) clearTimeout(checkTimer);
-      checkTimer = setTimeout(() => checkMobileDuplicate(false), 350);
-    });
-    mobileInput.addEventListener('blur', () => checkMobileDuplicate(true));
-    if (mobileInput.value.length === 10) checkMobileDuplicate(true);
-  }
-
-  if (regForm) {
-    regForm.addEventListener('submit', (e) => {
-      if (mobileRegistered) {
-        e.preventDefault();
-        setMobileDupState(true, mobileDupMsg ? mobileDupMsg.textContent : '');
-        mobileInput && mobileInput.focus();
-        return;
-      }
-      const otpVerified = document.getElementById('otp_verified');
-      if (otpVerified && otpVerified.value !== '1') {
-        e.preventDefault();
-        const otpMsg = document.getElementById('otp_msg');
-        if (otpMsg) {
-          otpMsg.textContent = 'Please verify OTP to register before submitting.';
-          otpMsg.className = 'text-xs text-red-600 leading-snug';
-        }
-        document.getElementById('otp_code')?.focus();
-      }
-    });
-  }
-
-  // ---- OTP (SMS Alert) ----
-  const sendOtpBtn = document.getElementById('send_otp_btn');
-  const verifyOtpBtn = document.getElementById('verify_otp_btn');
-  const otpInput = document.getElementById('otp_code');
-  const otpMsg = document.getElementById('otp_msg');
-  const otpVerifiedInput = document.getElementById('otp_verified');
-  const csrfInput = document.querySelector('#regForm input[name="csrf_token"]');
-
-  function setOtpMsg(text, ok) {
-    if (!otpMsg) return;
-    otpMsg.textContent = text || '';
-    otpMsg.className = ok ? 'text-xs text-green-700 leading-snug' : 'text-xs text-red-600 leading-snug';
-  }
-
-  function resetOtpState() {
-    if (otpVerifiedInput) otpVerifiedInput.value = '0';
-    if (otpInput) otpInput.value = '';
-    setOtpMsg('', true);
-  }
-
-  if (mobileInput) {
-    mobileInput.addEventListener('input', () => {
-      resetOtpState();
-    });
-  }
-
-  if (sendOtpBtn) {
-    sendOtpBtn.addEventListener('click', () => {
-      const digits = (mobileInput?.value || '').replace(/\D/g, '');
-      if (!/^[6-9][0-9]{9}$/.test(digits)) {
-        setOtpMsg('Enter a valid 10-digit mobile first.', false);
-        return;
-      }
-      if (mobileRegistered) {
-        setOtpMsg('This number already has a voucher.', false);
-        return;
-      }
-      sendOtpBtn.disabled = true;
-      setOtpMsg('Sending OTP…', true);
-      const body = new FormData();
-      body.append('csrf_token', csrfInput ? csrfInput.value : '');
-      body.append('mobile', digits);
-      fetch('/send-otp.php', { method: 'POST', body, credentials: 'same-origin' })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.ok) {
-            setOtpMsg(data.message || 'OTP sent on SMS.', true);
-            otpInput && otpInput.focus();
-            let left = data.cooldown || 45;
-            const tick = () => {
-              if (left <= 0) {
-                sendOtpBtn.disabled = false;
-                sendOtpBtn.textContent = 'Resend OTP';
-                return;
-              }
-              sendOtpBtn.textContent = 'Resend in ' + left + 's';
-              left -= 1;
-              setTimeout(tick, 1000);
-            };
-            tick();
-          } else {
-            sendOtpBtn.disabled = false;
-            setOtpMsg(data.error || 'Could not send OTP.', false);
-          }
-        })
-        .catch(() => {
-          sendOtpBtn.disabled = false;
-          setOtpMsg('Network error. Try again.', false);
-        });
-    });
-  }
-
-  if (verifyOtpBtn) {
-    verifyOtpBtn.addEventListener('click', () => {
-      const digits = (mobileInput?.value || '').replace(/\D/g, '');
-      const code = (otpInput?.value || '').replace(/\D/g, '');
-      if (!/^[6-9][0-9]{9}$/.test(digits)) {
-        setOtpMsg('Enter a valid mobile number.', false);
-        return;
-      }
-      if (code.length !== 6) {
-        setOtpMsg('Enter the 6-digit OTP.', false);
-        return;
-      }
-      verifyOtpBtn.disabled = true;
-      const body = new FormData();
-      body.append('csrf_token', csrfInput ? csrfInput.value : '');
-      body.append('mobile', digits);
-      body.append('otp', code);
-      fetch('/verify-otp.php', { method: 'POST', body, credentials: 'same-origin' })
-        .then((r) => r.json())
-        .then((data) => {
-          verifyOtpBtn.disabled = false;
-          if (data.ok) {
-            if (otpVerifiedInput) otpVerifiedInput.value = '1';
-            setOtpMsg(data.message || 'Verified.', true);
-            if (otpInput) otpInput.readOnly = true;
-            if (sendOtpBtn) sendOtpBtn.disabled = true;
-            verifyOtpBtn.disabled = true;
-          } else {
-            if (otpVerifiedInput) otpVerifiedInput.value = '0';
-            setOtpMsg(data.error || 'Incorrect OTP.', false);
-          }
-        })
-        .catch(() => {
-          verifyOtpBtn.disabled = false;
-          setOtpMsg('Network error. Try again.', false);
-        });
-    });
-  }
 </script>
 
 <?php

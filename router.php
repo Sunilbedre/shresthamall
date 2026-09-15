@@ -54,6 +54,7 @@ $routes = [
     '/webhook.php'           => 'public/webhook.php',
     '/voucher-pdf'           => 'public/voucher_pdf.php',
     '/voucher-pdf.php'       => 'public/voucher_pdf.php',
+    '/js/register-flow.js'   => 'public/js/register-flow.js',
 ];
 
 $prefix = '/' . $adminPath;
