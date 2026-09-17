@@ -18,6 +18,7 @@ final class CustomerService
     public const ERR_PRODUCT_FULL = 'PRODUCT_FULL';
     public const ERR_VALIDATION = 'VALIDATION';
     public const ERR_SLOT_INVALID = 'SLOT_INVALID';
+    public const ERR_CAMPAIGN_MOBILE_USED = 'CAMPAIGN_MOBILE_USED';
 
     /**
      * Attempts to register a customer + generate their voucher in one DB transaction.
@@ -76,8 +77,8 @@ final class CustomerService
 
         $pdo = Database::connection();
 
-        // ---- Fast-path duplicate check (pre-transaction, friendly UX) ----
-        $existing = self::findByMobile($mobile);
+        // ---- Fast-path duplicate check (weekend = one mobile per non-campaign registration) ----
+        $existing = self::findWeekendByMobile($mobile);
         if ($existing !== null) {
             return ['ok' => false, 'error' => self::ERR_DUPLICATE_MOBILE, 'customer' => $existing];
         }
@@ -102,9 +103,9 @@ final class CustomerService
 
             $insertCustomer = $pdo->prepare("
                 INSERT INTO customers
-                    (full_name, mobile_number, selected_product, session, event_date, offer_slot_id, area, age_group, gender, consent, ip_address, user_agent, registered_at)
+                    (full_name, mobile_number, selected_product, session, event_date, offer_slot_id, campaign_id, area, age_group, gender, consent, ip_address, user_agent, registered_at)
                 VALUES
-                    (:full_name, :mobile_number, :selected_product, :session, :event_date, :offer_slot_id, :area, :age_group, :gender, 1, :ip, :ua, datetime('now'))
+                    (:full_name, :mobile_number, :selected_product, :session, :event_date, :offer_slot_id, NULL, :area, :age_group, :gender, 1, :ip, :ua, datetime('now'))
             ");
             $insertCustomer->execute([
                 'full_name' => $name,
@@ -159,11 +160,175 @@ final class CustomerService
         return ['ok' => true, 'customer' => $customer, 'voucher' => $voucher];
     }
 
+    /**
+     * Special-event registration (separate link per product, daily capacity, one mobile per campaign).
+     *
+     * @return array{ok:bool, error?:string, fields?:array, customer?:array, voucher?:array}
+     */
+    public static function registerSpecial(array $input, array $campaign, array $product, string $ip, string $userAgent): array
+    {
+        if (Settings::get('registration_status', 'OPEN') !== 'OPEN') {
+            return ['ok' => false, 'error' => self::ERR_REGISTRATION_CLOSED];
+        }
+        if (!CampaignService::isOpen($campaign)) {
+            return ['ok' => false, 'error' => self::ERR_REGISTRATION_CLOSED];
+        }
+        if (CampaignService::isProductFull($product)) {
+            return ['ok' => false, 'error' => self::ERR_PRODUCT_FULL];
+        }
+
+        $errors = [];
+        $name = Validation::validateName((string) ($input['full_name'] ?? ''));
+        if ($name === null) {
+            $errors['full_name'] = 'Please enter a valid name (2–80 letters).';
+        }
+
+        $mobile = Validation::normaliseMobile((string) ($input['mobile_number'] ?? ''));
+        if ($mobile === null) {
+            $errors['mobile_number'] = 'Please enter a valid 10-digit Indian mobile number.';
+        } elseif (SmsAlertService::isEnabled() && !OtpService::isVerified($mobile)) {
+            $errors['otp'] = 'Please verify your mobile number with OTP.';
+        }
+
+        $session = (string) ($input['session'] ?? '');
+        if (!Products::isValidSession($session)) {
+            $errors['session'] = 'Please select a time slot.';
+        }
+
+        $consent = !empty($input['consent']);
+        if (!$consent) {
+            $errors['consent'] = 'Please agree to the Terms & Conditions and WhatsApp updates to continue.';
+        }
+
+        $area = Validation::validateArea((string) ($input['area'] ?? ''));
+        if ($area === null) {
+            $errors['area'] = 'Please select the area you are coming from.';
+        }
+
+        if (!empty($errors)) {
+            return ['ok' => false, 'error' => self::ERR_VALIDATION, 'fields' => $errors];
+        }
+
+        $campaignId = (int) $campaign['id'];
+        $productKey = (string) $product['product_key'];
+        $eventDate = (string) $campaign['event_date'];
+        $dailyCap = (int) $product['daily_capacity'];
+
+        $existingCampaign = self::findByMobileInCampaign($mobile, $campaignId);
+        if ($existingCampaign !== null) {
+            return ['ok' => false, 'error' => self::ERR_CAMPAIGN_MOBILE_USED, 'customer' => $existingCampaign];
+        }
+
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            if ($dailyCap > 0 && $dailyCap < 99999) {
+                $stmt = $pdo->prepare("
+                    SELECT COUNT(*) FROM customers
+                    WHERE campaign_id = :cid AND selected_product = :p AND event_date = :d
+                ");
+                $stmt->execute(['cid' => $campaignId, 'p' => $productKey, 'd' => $eventDate]);
+                if ((int) $stmt->fetchColumn() >= $dailyCap) {
+                    $pdo->rollBack();
+                    return ['ok' => false, 'error' => self::ERR_PRODUCT_FULL];
+                }
+            }
+
+            $insertCustomer = $pdo->prepare("
+                INSERT INTO customers
+                    (full_name, mobile_number, selected_product, session, event_date, offer_slot_id, campaign_id, area, age_group, gender, consent, ip_address, user_agent, registered_at)
+                VALUES
+                    (:full_name, :mobile_number, :selected_product, :session, :event_date, NULL, :campaign_id, :area, :age_group, :gender, 1, :ip, :ua, datetime('now'))
+            ");
+            $insertCustomer->execute([
+                'full_name' => $name,
+                'mobile_number' => $mobile,
+                'selected_product' => $productKey,
+                'session' => $session,
+                'event_date' => $eventDate,
+                'campaign_id' => $campaignId,
+                'area' => $area ?: null,
+                'age_group' => null,
+                'gender' => null,
+                'ip' => $ip,
+                'ua' => mb_substr($userAgent, 0, 255),
+            ]);
+            $customerId = (int) $pdo->lastInsertId();
+
+            $window = CampaignService::sessionWindow($campaign, $session);
+            $voucherCode = VoucherService::generateCode();
+
+            $insertVoucher = $pdo->prepare("
+                INSERT INTO vouchers
+                    (customer_id, voucher_code, event_date, session_start, session_end, status, created_at)
+                VALUES
+                    (:customer_id, :voucher_code, :event_date, :session_start, :session_end, 'ACTIVE', datetime('now'))
+            ");
+            $insertVoucher->execute([
+                'customer_id' => $customerId,
+                'voucher_code' => $voucherCode,
+                'event_date' => $eventDate,
+                'session_start' => $window['start']->format('Y-m-d H:i:s'),
+                'session_end' => $window['end']->format('Y-m-d H:i:s'),
+            ]);
+            $voucherId = (int) $pdo->lastInsertId();
+
+            AuditLog::record(
+                'system',
+                'SPECIAL_REGISTRATION_CREATED',
+                "campaign_id={$campaignId} customer_id={$customerId} mobile={$mobile} product={$productKey} date={$eventDate} session={$session}",
+                $ip
+            );
+
+            $pdo->commit();
+            OtpService::clear();
+        } catch (PDOException $e) {
+            $pdo->rollBack();
+            if (str_contains($e->getMessage(), 'UNIQUE')) {
+                $existing = self::findByMobileInCampaign($mobile, $campaignId)
+                    ?? self::findWeekendByMobile($mobile);
+                if ($existing !== null) {
+                    $err = ((int) ($existing['campaign_id'] ?? 0) === $campaignId)
+                        ? self::ERR_CAMPAIGN_MOBILE_USED
+                        : self::ERR_DUPLICATE_MOBILE;
+                    return ['ok' => false, 'error' => $err, 'customer' => $existing];
+                }
+            }
+            throw $e;
+        }
+
+        return [
+            'ok' => true,
+            'customer' => self::findById($customerId),
+            'voucher' => VoucherModel::findById($voucherId),
+        ];
+    }
+
+    /** Any registration on this mobile (legacy helper). */
     public static function findByMobile(string $normalisedMobile): ?array
     {
         $pdo = Database::connection();
-        $stmt = $pdo->prepare("SELECT * FROM customers WHERE mobile_number = :m LIMIT 1");
+        $stmt = $pdo->prepare('SELECT * FROM customers WHERE mobile_number = :m LIMIT 1');
         $stmt->execute(['m' => $normalisedMobile]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    /** Weekend / regular offer registration (campaign_id IS NULL). */
+    public static function findWeekendByMobile(string $normalisedMobile): ?array
+    {
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare('SELECT * FROM customers WHERE mobile_number = :m AND campaign_id IS NULL LIMIT 1');
+        $stmt->execute(['m' => $normalisedMobile]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    public static function findByMobileInCampaign(string $normalisedMobile, int $campaignId): ?array
+    {
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare('SELECT * FROM customers WHERE mobile_number = :m AND campaign_id = :cid LIMIT 1');
+        $stmt->execute(['m' => $normalisedMobile, 'cid' => $campaignId]);
         $row = $stmt->fetch();
         return $row ?: null;
     }

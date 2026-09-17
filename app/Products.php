@@ -29,7 +29,15 @@ final class Products
 
     public static function label(string $key): ?string
     {
-        return OfferCatalog::productLabel($key);
+        $label = OfferCatalog::productLabel($key);
+        if ($label !== null) {
+            return $label;
+        }
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare('SELECT label FROM campaign_products WHERE product_key = :k ORDER BY id DESC LIMIT 1');
+        $stmt->execute(['k' => $key]);
+        $row = $stmt->fetch();
+        return $row ? (string) $row['label'] : null;
     }
 
     public static function isValidSession(string $session): bool

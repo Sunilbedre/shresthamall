@@ -218,6 +218,16 @@ function e(?string $value): string
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
 
+/** Sticky header title for offer registration pages, e.g. "1 Rupee Saree Offer". */
+function offer_header_title(string $productLabel): string
+{
+    $label = trim($productLabel);
+    if ($label === '') {
+        return 'Register for offer';
+    }
+    return $label . ' Offer';
+}
+
 function redirect(string $path): never
 {
     header('Location: ' . $path);
