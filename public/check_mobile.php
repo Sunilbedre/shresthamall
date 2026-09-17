@@ -31,7 +31,29 @@ if ($mobile === null) {
     ]);
 }
 
-$existing = CustomerService::findByMobile($mobile);
+$campaignSlug = trim((string) ($_GET['campaign'] ?? ''));
+if ($campaignSlug !== '') {
+    $campaign = CampaignService::findBySlug($campaignSlug);
+    if ($campaign !== null) {
+        $existing = CustomerService::findByMobileInCampaign($mobile, (int) $campaign['id']);
+        if ($existing !== null) {
+            json_response([
+                'ok' => true,
+                'registered' => true,
+                'valid' => true,
+                'message' => 'This mobile number is already registered for this special event. Only one voucher per number is allowed.',
+            ]);
+        }
+    }
+    json_response([
+        'ok' => true,
+        'registered' => false,
+        'valid' => true,
+        'message' => '',
+    ]);
+}
+
+$existing = CustomerService::findWeekendByMobile($mobile);
 if ($existing !== null) {
     json_response([
         'ok' => true,

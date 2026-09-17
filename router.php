@@ -54,6 +54,7 @@ $routes = [
     '/webhook.php'           => 'public/webhook.php',
     '/voucher-pdf'           => 'public/voucher_pdf.php',
     '/voucher-pdf.php'       => 'public/voucher_pdf.php',
+    '/js/register-flow.js'   => 'public/js/register-flow.js',
 ];
 
 $prefix = '/' . $adminPath;
@@ -80,9 +81,21 @@ $adminMap = [
     '/events.php'    => 'admin/events.php',
     '/Events'        => 'admin/events.php',
     '/Events.php'    => 'admin/events.php',
+    '/offers_report' => 'admin/offers_report.php',
+    '/offers_report.php' => 'admin/offers_report.php',
+    '/special_events_report' => 'admin/special_events_report.php',
+    '/special_events_report.php' => 'admin/special_events_report.php',
 ];
 
 $path = rtrim($uri, '/') ?: '/';
+
+// /s/{campaign}/{product} — special event registration
+if (preg_match('#^/s/([a-z0-9-]+)/([a-z0-9-]+)/?$#', $uri, $m)) {
+    $_GET['campaign'] = $m[1];
+    $_GET['product'] = $m[2];
+    require __DIR__ . '/public/special_offer.php';
+    return true;
+}
 
 // /v/{VOUCHER_CODE}
 if (preg_match('#^/v/([A-Za-z0-9\\-]+)/?$#', $uri, $m)) {

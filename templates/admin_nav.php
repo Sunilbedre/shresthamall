@@ -11,6 +11,7 @@ if (AuthService::isAdmin() || AuthService::isStaff() || AuthService::isSubAdmin(
 }
 if (AuthService::isAdmin() || AuthService::isStaff() || AuthService::isSubAdmin()) {
     $navItems['offers_report'] = [admin_url('offers_report.php'), 'Offers Report'];
+    $navItems['special_events_report'] = [admin_url('special_events_report.php'), 'Special Events'];
 }
 if (AuthService::isAdmin() || AuthService::isSubAdmin()) {
     $navItems['exports'] = [admin_url('exports.php'), 'Exports'];
