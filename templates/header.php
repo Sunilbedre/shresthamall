@@ -61,7 +61,7 @@ $pageTitle = $pageTitle ?? 'Shreeshta Family Store – ₹1 Special Offer';
     <div class="min-w-0 text-left">
       <p class="text-gold-light text-[10px] font-semibold uppercase tracking-[0.14em] leading-none mb-0.5">Shreeshta Family Store</p>
       <?php if (!empty($headerTitle)): ?>
-        <h1 class="font-heading text-[15px] sm:text-base font-bold leading-tight"><?= e($headerTitle) ?></h1>
+        <h1 id="header_offer_title" class="font-heading text-[15px] sm:text-base font-bold leading-tight"><?= e($headerTitle) ?></h1>
         <?php if (!empty($headerSubtitle)): ?>
           <p class="text-gold-light text-[14px] sm:text-[16px] font-semibold mt-1.5 leading-none whitespace-nowrap overflow-x-auto max-w-full subtitle-oneline"><?= e($headerSubtitle) ?></p>
         <?php endif; ?>

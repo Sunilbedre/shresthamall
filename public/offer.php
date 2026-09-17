@@ -59,9 +59,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$productLabels = [];
+foreach ($offerProducts as $p) {
+    if (empty($slotsByProduct[$p['product_key']])) {
+        continue;
+    }
+    $productLabels[$p['product_key']] = (string) $p['label'];
+}
+$selectedProductKey = (string) ($oldInput['selected_product'] ?? $oldInput['selected_offer'] ?? '');
+if ($selectedProductKey !== '' && !isset($productLabels[$selectedProductKey])) {
+    $selectedProductKey = '';
+}
+
 $pageTitle = 'Special Offer | Shreeshta Family Store';
 $compactHeader = true;
-$headerTitle = 'Register for offer';
+$headerTitle = offer_header_title($productLabels[$selectedProductKey] ?? '');
 $headerSubtitle = 'WhatsApp voucher · One mobile number · One voucher · One customer';
 require __DIR__ . '/../templates/header.php';
 ?>
@@ -246,9 +258,17 @@ require __DIR__ . '/../templates/header.php';
 
 <script>
   const slotsByProduct = <?= json_encode($slotsByProduct, JSON_UNESCAPED_UNICODE) ?>;
+  const productLabels = <?= json_encode($productLabels, JSON_UNESCAPED_UNICODE) ?>;
   const productSelect = document.getElementById('selected_offer');
   const slotSelect = document.getElementById('offer_slot_id');
   const preselectedSlot = <?= json_encode((string) ($oldInput['offer_slot_id'] ?? '')) ?>;
+
+  function updateHeaderOfferTitle() {
+    const el = document.getElementById('header_offer_title');
+    if (!el || !productSelect) return;
+    const label = productLabels[productSelect.value] || '';
+    el.textContent = label ? label + ' Offer' : 'Register for offer';
+  }
 
   function fillSlots() {
     if (!productSelect || !slotSelect) return;
@@ -269,8 +289,12 @@ require __DIR__ . '/../templates/header.php';
   }
 
   if (productSelect) {
-    productSelect.addEventListener('change', fillSlots);
+    productSelect.addEventListener('change', function () {
+      fillSlots();
+      updateHeaderOfferTitle();
+    });
     fillSlots();
+    updateHeaderOfferTitle();
   }
 
 

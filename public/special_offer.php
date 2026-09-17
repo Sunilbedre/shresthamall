@@ -91,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $pageTitle = $productLabel . ' | ' . $campaignTitle;
 $compactHeader = true;
-$headerTitle = 'Register for offer';
+$headerTitle = offer_header_title($productLabel);
 $headerSubtitle = 'WhatsApp voucher · One mobile number · One voucher · One customer';
 require __DIR__ . '/../templates/header.php';
 ?>
