@@ -21,7 +21,16 @@ if ($mobile === null) {
     json_response(['ok' => false, 'error' => 'Enter a valid 10-digit mobile number.']);
 }
 
-$result = OtpService::send($mobile, $_SERVER['REMOTE_ADDR'] ?? 'unknown');
+$campaignId = null;
+$campaignSlug = trim((string) ($_POST['campaign'] ?? ''));
+if ($campaignSlug !== '') {
+    $campaign = CampaignService::findBySlug($campaignSlug);
+    if ($campaign !== null) {
+        $campaignId = (int) $campaign['id'];
+    }
+}
+
+$result = OtpService::send($mobile, $_SERVER['REMOTE_ADDR'] ?? 'unknown', $campaignId);
 if (!($result['ok'] ?? false)) {
     json_response([
         'ok'       => false,

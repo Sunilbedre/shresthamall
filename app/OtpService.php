@@ -19,13 +19,20 @@ final class OtpService
     /**
      * @return array{ok:bool, error?:string, cooldown?:int, channel?:string}
      */
-    public static function send(string $mobileE164, string $ip): array
+    public static function send(string $mobileE164, string $ip, ?int $campaignId = null): array
     {
         global $CONFIG;
 
-        $existing = CustomerService::findByMobile($mobileE164);
-        if ($existing !== null) {
-            return ['ok' => false, 'error' => 'This mobile number already used a voucher earlier.'];
+        if ($campaignId !== null && $campaignId > 0) {
+            $existing = CustomerService::findByMobileInCampaign($mobileE164, $campaignId);
+            if ($existing !== null) {
+                return ['ok' => false, 'error' => 'This mobile number is already registered for this special event. Only one voucher per number is allowed.'];
+            }
+        } else {
+            $existing = CustomerService::findWeekendByMobile($mobileE164);
+            if ($existing !== null) {
+                return ['ok' => false, 'error' => 'This mobile number already used a voucher earlier. Only one coupon per number is allowed.'];
+            }
         }
 
         if (AuthService::rateLimited('otp_ip_' . $ip, 12, 600)) {

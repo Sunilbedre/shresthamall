@@ -44,6 +44,12 @@ RewriteRule ^voucher-pdf/?$ public/voucher_pdf.php [L,QSA]
 RewriteRule ^voucher-pdf\.php$ public/voucher_pdf.php [L,QSA]
 RewriteRule ^v/([A-Za-z0-9\-]+)/?$ public/v.php?code=$1 [L,QSA]
 
+# ---- Special one-day events (separate link per product) ----------------------
+RewriteRule ^s/([a-z0-9-]+)/([a-z0-9-]+)/?$ public/special_offer.php?campaign=$1&product=$2 [L,QSA]
+
+# ---- Static JS --------------------------------------------------------------
+RewriteRule ^js/register-flow\.js$ public/js/register-flow.js [L]
+
 # ---- Home page -------------------------------------------------------------
 RewriteRule ^$ public/index.php [L]
 
