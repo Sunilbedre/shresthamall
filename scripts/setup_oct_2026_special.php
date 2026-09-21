@@ -4,9 +4,10 @@
  * Gandhi Jayanti / Oct 2 special — separate link per ₹1 product.
  *
  * Links:
- *   /s/oct-2026/saree  — 1 Rupee Saree (500/day)
- *   /s/oct-2026/kurti  — 1 Rupee Kurti / Leggings (200/day)
- *   /s/oct-2026/kids   — 1 Rupee Kid's T-shirt (200/day)
+ *   /s/oct-2026/saree         — 1 Rupee Saree (500/day)
+ *   /s/oct-2026/saree-min99   — 1 Rupee Saree — Min purchase ₹99/- (500/day)
+ *   /s/oct-2026/kurti         — 1 Rupee Kurti / Leggings (200/day)
+ *   /s/oct-2026/kids          — 1 Rupee Kid's T-shirt (200/day)
  */
 
 declare(strict_types=1);
@@ -32,8 +33,9 @@ if ($campaignId <= 0) {
 
 $products = [
     ['rupee1_saree_oct', 'saree', '1 Rupee Saree', 500, 1],
-    ['rupee1_kurti_oct', 'kurti', '1 Rupee Kurti / Leggings', 200, 2],
-    ['rupee1_kids_tshirt_oct', 'kids', "1 Rupee Kid's T-shirt", 200, 3],
+    ['rupee1_saree_min99_oct', 'saree-min99', '1 Rupee Saree — Min purchase ₹99/-', 500, 2],
+    ['rupee1_kurti_oct', 'kurti', '1 Rupee Kurti / Leggings', 200, 3],
+    ['rupee1_kids_tshirt_oct', 'kids', "1 Rupee Kid's T-shirt", 200, 4],
 ];
 
 foreach ($products as [$key, $slug, $label, $cap, $sort]) {

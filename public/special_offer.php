@@ -137,6 +137,9 @@ require __DIR__ . '/../templates/header.php';
       <div class="px-3.5 sm:px-5 pt-4 pb-1 text-center border-b border-gold/25">
         <p class="text-[10px] font-semibold uppercase tracking-widest text-maroon-dark/55"><?= e($campaignTitle) ?></p>
         <h2 class="font-heading text-lg font-bold leading-tight text-maroon mt-1"><?= e($productLabel) ?></h2>
+        <?php if (str_contains((string) $productRow['product_key'], 'min99') || str_contains(strtolower($productLabel), 'min purchase')): ?>
+          <p class="text-xs font-semibold text-maroon-dark/80 mt-1.5">Minimum store purchase of ₹99 required to redeem this ₹1 saree offer.</p>
+        <?php endif; ?>
         <p class="text-xs text-maroon-dark/65 mt-1"><?= e($eventDateFormatted) ?></p>
         <?php if ($remaining < 99999): ?>
           <p class="text-[11px] text-maroon-dark/55 mt-1"><?= (int) $remaining ?> spots left today</p>
