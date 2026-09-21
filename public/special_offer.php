@@ -17,6 +17,20 @@ if ($campaignSlug === '' || $productSlug === '') {
 }
 
 $productRow = CampaignService::findProductByCampaignSlug($campaignSlug, $productSlug);
+if ($productRow === null && $campaignSlug === 'oct-2026' && $productSlug === 'saree-min99') {
+    $bootstrapCampaign = CampaignService::findBySlug($campaignSlug);
+    if ($bootstrapCampaign !== null) {
+        CampaignService::upsertProduct(
+            (int) $bootstrapCampaign['id'],
+            'rupee1_saree_min99_oct',
+            'saree-min99',
+            '1 Rupee Saree — Min purchase ₹99/-',
+            500,
+            2
+        );
+        $productRow = CampaignService::findProductByCampaignSlug($campaignSlug, $productSlug);
+    }
+}
 if ($productRow === null) {
     http_response_code(404);
     echo 'Offer not found';

@@ -52,6 +52,49 @@ final class CampaignService
         }
 
         self::migrateMobileIndexes($pdo);
+        self::seedOct2026IfNeeded();
+    }
+
+    /** Idempotent Oct 2, 2026 Gandhi Jayanti products (incl. min-₹99 saree link). */
+    public static function seedOct2026Special(): void
+    {
+        $res = self::upsertCampaign(
+            'oct-2026',
+            'Gandhi Jayanti Special — ₹1 Offer',
+            '2026-10-02',
+            'OPEN'
+        );
+        $campaignId = (int) ($res['id'] ?? 0);
+        if ($campaignId <= 0) {
+            $c = self::findBySlug('oct-2026');
+            $campaignId = (int) ($c['id'] ?? 0);
+        }
+        if ($campaignId <= 0) {
+            return;
+        }
+
+        $products = [
+            ['rupee1_saree_oct', 'saree', '1 Rupee Saree', 500, 1],
+            ['rupee1_saree_min99_oct', 'saree-min99', '1 Rupee Saree — Min purchase ₹99/-', 500, 2],
+            ['rupee1_kurti_oct', 'kurti', '1 Rupee Kurti / Leggings', 200, 3],
+            ['rupee1_kids_tshirt_oct', 'kids', "1 Rupee Kid's T-shirt", 200, 4],
+        ];
+
+        foreach ($products as [$key, $slug, $label, $cap, $sort]) {
+            self::upsertProduct($campaignId, $key, $slug, $label, $cap, $sort);
+        }
+    }
+
+    private static function seedOct2026IfNeeded(): void
+    {
+        $campaign = self::findBySlug('oct-2026');
+        if ($campaign === null) {
+            return;
+        }
+        if (self::findProduct((int) $campaign['id'], 'saree-min99') !== null) {
+            return;
+        }
+        self::seedOct2026Special();
     }
 
     private static function migrateMobileIndexes(PDO $pdo): void

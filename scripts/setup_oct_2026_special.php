@@ -14,34 +14,17 @@ declare(strict_types=1);
 require_once __DIR__ . '/../app/bootstrap.php';
 
 CampaignService::ensureSchema();
+CampaignService::seedOct2026Special();
 
-$res = CampaignService::upsertCampaign(
-    'oct-2026',
-    'Gandhi Jayanti Special — ₹1 Offer',
-    '2026-10-02',
-    'OPEN'
-);
-$campaignId = (int) ($res['id'] ?? 0);
-if ($campaignId <= 0) {
-    $c = CampaignService::findBySlug('oct-2026');
-    $campaignId = (int) ($c['id'] ?? 0);
-}
-if ($campaignId <= 0) {
+$campaign = CampaignService::findBySlug('oct-2026');
+if ($campaign === null) {
     fwrite(STDERR, "Failed to create campaign.\n");
     exit(1);
 }
 
-$products = [
-    ['rupee1_saree_oct', 'saree', '1 Rupee Saree', 500, 1],
-    ['rupee1_saree_min99_oct', 'saree-min99', '1 Rupee Saree — Min purchase ₹99/-', 500, 2],
-    ['rupee1_kurti_oct', 'kurti', '1 Rupee Kurti / Leggings', 200, 3],
-    ['rupee1_kids_tshirt_oct', 'kids', "1 Rupee Kid's T-shirt", 200, 4],
-];
-
-foreach ($products as [$key, $slug, $label, $cap, $sort]) {
-    $r = CampaignService::upsertProduct($campaignId, $key, $slug, $label, $cap, $sort);
-    echo 'Product [' . $slug . ']: ' . (($r['ok'] ?? false) ? 'OK' : 'ERR') . "\n";
-    echo '  Link: ' . CampaignService::publicUrl('oct-2026', $slug) . "\n";
+foreach (CampaignService::products((int) $campaign['id']) as $p) {
+    echo 'Product [' . $p['product_slug'] . ']: OK' . "\n";
+    echo '  Link: ' . CampaignService::publicUrl('oct-2026', (string) $p['product_slug']) . "\n";
 }
 
 echo "\n--- Report preview ---\n";
