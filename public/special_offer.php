@@ -45,17 +45,51 @@ if ($campaign === null) {
 }
 
 $campaignOpen = CampaignService::isOpen($campaign);
-$productFull = CampaignService::isProductFull($productRow);
+$visitDates = CampaignService::visitDates($campaign);
+$isMultiDay = count($visitDates) > 1;
+$isSessionScoped = CampaignService::capacityScope($productRow) === 'session';
+$today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+$defaultVisitDate = $visitDates[0] ?? (string) $campaign['event_date'];
+foreach ($visitDates as $d) {
+    if ($d >= $today) {
+        $defaultVisitDate = $d;
+        break;
+    }
+}
+
+$productFull = $isSessionScoped
+    ? CampaignService::isSoldOutEverywhere($campaign, $productRow)
+    : CampaignService::isProductFull($productRow, $defaultVisitDate);
+
 $remaining = CampaignService::remainingDaily(
     (int) $campaign['id'],
     (string) $productRow['product_key'],
-    (string) $campaign['event_date'],
-    (int) $productRow['daily_capacity']
+    $defaultVisitDate,
+    (int) $productRow['daily_capacity'],
+    $productRow,
+    $isSessionScoped ? 'morning' : null
 );
 
-$eventDateFormatted = (new DateTimeImmutable((string) $campaign['event_date']))->format('l, j F Y');
+$startDate = (string) $campaign['event_date'];
+$endDate = (string) ($campaign['event_end_date'] ?? $startDate);
+if ($isMultiDay) {
+    $eventDateFormatted = (new DateTimeImmutable($startDate))->format('j M') . ' – '
+        . (new DateTimeImmutable($endDate))->format('j M Y') . ' · All days';
+} else {
+    $eventDateFormatted = (new DateTimeImmutable($startDate))->format('l, j F Y');
+}
+
 $productLabel = (string) $productRow['label'];
 $campaignTitle = (string) $campaign['title'];
+$min99Sibling = CampaignService::findMin99Sibling($campaign, $productSlug);
+$min99Url = $min99Sibling
+    ? CampaignService::publicUrl($campaignSlug, (string) $min99Sibling['product_slug'])
+    : '';
+$isMin99Product = str_contains((string) $productRow['product_key'], 'min99')
+    || str_contains(strtolower($productSlug), 'min99');
+$remainingBySlot = $isSessionScoped
+    ? CampaignService::remainingByDateSession($campaign, $productRow)
+    : [];
 
 $errors = [];
 $duplicateCustomer = null;
@@ -122,14 +156,21 @@ require __DIR__ . '/../templates/header.php';
     <div class="bg-white gold-border rounded-2xl shadow-sm overflow-hidden mt-4">
       <div class="bg-maroon text-ivory px-4 py-4 text-center">
         <div class="text-4xl mb-2">😔</div>
-        <h2 class="font-heading text-xl font-bold leading-tight">Fully booked</h2>
-        <p class="text-gold-light/95 text-sm mt-2"><?= e($productLabel) ?> has reached today&apos;s limit.</p>
+        <h2 class="font-heading text-xl font-bold leading-tight">Free slots are full</h2>
+        <p class="text-gold-light/95 text-sm mt-2"><?= e($productLabel) ?> — all free session slots are booked.</p>
       </div>
       <div class="px-4 py-5 text-center text-sm text-maroon-dark/75">
-        <p class="mb-3">Try another product link from our special event, or visit the store directly.</p>
+        <?php if ($min99Url && !$isMin99Product): ?>
+          <p class="mb-4 font-semibold text-maroon">You can still get ₹1 Saree with a minimum store purchase of ₹99/-</p>
+          <a href="<?= e($min99Url) ?>"
+            class="block mb-3 tap-target bg-gold text-maroon-dark font-bold rounded-xl py-4 px-4 shadow-md hover:bg-gold/90">
+            Register — Min purchase ₹99/- offer
+          </a>
+        <?php else: ?>
+          <p class="mb-3">Try another product link from this event, or visit the store directly.</p>
+        <?php endif; ?>
         <?php foreach (CampaignService::products((int) $campaign['id']) as $alt): ?>
           <?php if ($alt['product_slug'] === $productSlug) continue; ?>
-          <?php if (CampaignService::isProductFull(array_merge($alt, ['event_date' => $campaign['event_date']]))) continue; ?>
           <a href="<?= e(CampaignService::publicUrl($campaignSlug, (string) $alt['product_slug'])) ?>"
             class="block mb-2 tap-target bg-ivory gold-border rounded-xl py-3 px-4 font-semibold text-maroon hover:bg-gold-light/30">
             <?= e($alt['label']) ?>
@@ -155,8 +196,11 @@ require __DIR__ . '/../templates/header.php';
           <p class="text-xs font-semibold text-maroon-dark/80 mt-1.5">Minimum store purchase of ₹99 required to redeem this ₹1 saree offer.</p>
         <?php endif; ?>
         <p class="text-xs text-maroon-dark/65 mt-1"><?= e($eventDateFormatted) ?></p>
-        <?php if ($remaining < 99999): ?>
-          <p class="text-[11px] text-maroon-dark/55 mt-1"><?= (int) $remaining ?> spots left today</p>
+        <?php if ($isSessionScoped): ?>
+          <p class="text-[11px] text-maroon-dark/55 mt-1">Up to <?= (int) $productRow['daily_capacity'] ?> free registrations per session (morning &amp; evening)</p>
+          <p id="slot_remaining_hint" class="text-[11px] font-semibold text-maroon-dark/70 mt-1"></p>
+        <?php elseif ($remaining < 99999): ?>
+          <p class="text-[11px] text-maroon-dark/55 mt-1"><?= (int) $remaining ?> spots left</p>
         <?php endif; ?>
       </div>
 
@@ -191,6 +235,24 @@ require __DIR__ . '/../templates/header.php';
             <?php require __DIR__ . '/../templates/mobile_dup_alert.php'; ?>
             <?php if (!empty($errors['mobile_number'])): ?><p class="text-red-600 text-xs mt-1"><?= e($errors['mobile_number']) ?></p><?php endif; ?>
           </div>
+
+          <?php if ($isMultiDay): ?>
+          <div>
+            <label for="visit_date" class="block text-sm font-semibold text-maroon-dark mb-1">Visit date</label>
+            <select id="visit_date" name="visit_date" required class="w-full tap-target rounded-xl gold-border gold-ring px-3.5 py-3 bg-white">
+              <option value="">Select visit date</option>
+              <?php foreach ($visitDates as $d): ?>
+                <?php $sel = ($oldInput['visit_date'] ?? $defaultVisitDate) === $d; ?>
+                <option value="<?= e($d) ?>" <?= $sel ? 'selected' : '' ?>>
+                  <?= e((new DateTimeImmutable($d))->format('l, j F Y')) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <?php if (!empty($errors['visit_date'])): ?><p class="text-red-600 text-xs mt-1"><?= e($errors['visit_date']) ?></p><?php endif; ?>
+          </div>
+          <?php else: ?>
+            <input type="hidden" name="visit_date" id="visit_date" value="<?= e($defaultVisitDate) ?>">
+          <?php endif; ?>
 
           <div>
             <label for="area" class="block text-sm font-semibold text-maroon-dark mb-1">Your area in Bengaluru</label>
@@ -240,6 +302,80 @@ require __DIR__ . '/../templates/header.php';
 
   <?php endif; ?>
 </main>
+
+<?php if ($min99Url && !$isMin99Product && !$productFull && $isSessionScoped): ?>
+<div id="min99_popup" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true">
+  <div class="bg-white gold-border rounded-2xl shadow-xl max-w-sm w-full p-5 text-center">
+    <h3 class="font-heading text-lg font-bold text-maroon mb-2">Free slot is full</h3>
+    <p class="text-sm text-maroon-dark/80 mb-4">This session&apos;s free ₹1 saree slots are filled. You can still register with a <strong>minimum store purchase of ₹99/-</strong>.</p>
+    <a href="<?= e($min99Url) ?>" class="block tap-target bg-gold text-maroon-dark font-bold rounded-xl py-3.5 mb-2">Go to Min ₹99 offer</a>
+    <button type="button" id="min99_popup_close" class="text-sm text-maroon-dark/60 underline">Choose another date or time</button>
+  </div>
+</div>
+<?php endif; ?>
+
+<?php if ($isSessionScoped && !$productFull): ?>
+<script>
+  const remainingBySlot = <?= json_encode($remainingBySlot, JSON_UNESCAPED_UNICODE) ?>;
+  const min99Popup = document.getElementById('min99_popup');
+  const min99PopupClose = document.getElementById('min99_popup_close');
+  const visitDateEl = document.getElementById('visit_date');
+  const sessionEl = document.getElementById('session');
+  const hintEl = document.getElementById('slot_remaining_hint');
+
+  function selectedRemaining() {
+    if (!visitDateEl || !sessionEl) return null;
+    const d = visitDateEl.value;
+    const s = sessionEl.value;
+    if (!d || !s || !remainingBySlot[d]) return null;
+    return remainingBySlot[d][s];
+  }
+
+  function updateSlotHint() {
+    if (!hintEl) return;
+    const rem = selectedRemaining();
+    if (rem === null) {
+      hintEl.textContent = '';
+      return;
+    }
+    if (rem <= 0) {
+      hintEl.textContent = 'This session is full for the selected date.';
+      hintEl.classList.add('text-red-700');
+    } else {
+      hintEl.textContent = rem + ' free spot(s) left for this session';
+      hintEl.classList.remove('text-red-700');
+    }
+  }
+
+  function maybeShowMin99Popup() {
+    const rem = selectedRemaining();
+    if (min99Popup && rem !== null && rem <= 0) {
+      min99Popup.classList.remove('hidden');
+      min99Popup.classList.add('flex');
+    } else if (min99Popup) {
+      min99Popup.classList.add('hidden');
+      min99Popup.classList.remove('flex');
+    }
+  }
+
+  function onSlotChange() {
+    updateSlotHint();
+    maybeShowMin99Popup();
+  }
+
+  if (visitDateEl) visitDateEl.addEventListener('change', onSlotChange);
+  if (sessionEl) sessionEl.addEventListener('change', onSlotChange);
+  if (min99PopupClose) {
+    min99PopupClose.addEventListener('click', () => {
+      if (min99Popup) {
+        min99Popup.classList.add('hidden');
+        min99Popup.classList.remove('flex');
+      }
+    });
+  }
+  onSlotChange();
+</script>
+<?php endif; ?>
 
 <?php
 $compactFooter = true;

@@ -173,10 +173,6 @@ final class CustomerService
         if (!CampaignService::isOpen($campaign)) {
             return ['ok' => false, 'error' => self::ERR_REGISTRATION_CLOSED];
         }
-        if (CampaignService::isProductFull($product)) {
-            return ['ok' => false, 'error' => self::ERR_PRODUCT_FULL];
-        }
-
         $errors = [];
         $name = Validation::validateName((string) ($input['full_name'] ?? ''));
         if ($name === null) {
@@ -195,6 +191,14 @@ final class CustomerService
             $errors['session'] = 'Please select a time slot.';
         }
 
+        $visitDate = trim((string) ($input['visit_date'] ?? ''));
+        if ($visitDate === '') {
+            $visitDate = (string) $campaign['event_date'];
+        }
+        if (!CampaignService::isValidVisitDate($campaign, $visitDate)) {
+            $errors['visit_date'] = 'Please select a valid visit date for this event.';
+        }
+
         $consent = !empty($input['consent']);
         if (!$consent) {
             $errors['consent'] = 'Please agree to the Terms & Conditions and WhatsApp updates to continue.';
@@ -209,10 +213,15 @@ final class CustomerService
             return ['ok' => false, 'error' => self::ERR_VALIDATION, 'fields' => $errors];
         }
 
+        if (CampaignService::isProductFull($product, $visitDate, $session)) {
+            return ['ok' => false, 'error' => self::ERR_PRODUCT_FULL];
+        }
+
         $campaignId = (int) $campaign['id'];
         $productKey = (string) $product['product_key'];
-        $eventDate = (string) $campaign['event_date'];
+        $eventDate = $visitDate;
         $dailyCap = (int) $product['daily_capacity'];
+        $capacityScope = CampaignService::capacityScope($product);
 
         $existingCampaign = self::findByMobileInCampaign($mobile, $campaignId);
         if ($existingCampaign !== null) {
@@ -223,11 +232,17 @@ final class CustomerService
         $pdo->beginTransaction();
         try {
             if ($dailyCap > 0 && $dailyCap < 99999) {
-                $stmt = $pdo->prepare("
+                $countSql = "
                     SELECT COUNT(*) FROM customers
                     WHERE campaign_id = :cid AND selected_product = :p AND event_date = :d
-                ");
-                $stmt->execute(['cid' => $campaignId, 'p' => $productKey, 'd' => $eventDate]);
+                ";
+                $countParams = ['cid' => $campaignId, 'p' => $productKey, 'd' => $eventDate];
+                if ($capacityScope === 'session') {
+                    $countSql .= ' AND session = :s';
+                    $countParams['s'] = $session;
+                }
+                $stmt = $pdo->prepare($countSql);
+                $stmt->execute($countParams);
                 if ((int) $stmt->fetchColumn() >= $dailyCap) {
                     $pdo->rollBack();
                     return ['ok' => false, 'error' => self::ERR_PRODUCT_FULL];
@@ -255,7 +270,7 @@ final class CustomerService
             ]);
             $customerId = (int) $pdo->lastInsertId();
 
-            $window = CampaignService::sessionWindow($campaign, $session);
+            $window = CampaignService::sessionWindow($campaign, $session, $eventDate);
             $voucherCode = VoucherService::generateCode();
 
             $insertVoucher = $pdo->prepare("
