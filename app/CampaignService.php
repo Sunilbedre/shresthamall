@@ -449,7 +449,7 @@ final class CampaignService
     {
         $res = self::upsertCampaign(
             'oct-saree-10',
-            '₹1 Saree Offer — SM & MYS',
+            '₹1 Saree Offer — Malleshwaram',
             '2026-10-03',
             'OPEN',
             '2026-10-15',

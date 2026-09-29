@@ -1,7 +1,7 @@
 <?php
 /**
  * scripts/setup_oct_3_15_saree_event.php
- * SL#10 — 3 Oct to 15 Oct 2026, all days (SM & MYS).
+ * SL#10 — 3 Oct to 15 Oct 2026, all days (Malleshwaram store).
  *
  * Separate links:
  *   /s/oct-saree-10/saree         — 1 Rupee Saree (50 per session: 11:30–2:30 & 5:00–8:00)
