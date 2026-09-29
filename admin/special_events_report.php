@@ -93,12 +93,20 @@ require __DIR__ . '/../templates/header.php';
       <thead>
         <tr>
           <th class="hdr-title" colspan="6">
-            SPECIAL EVENT — <?= e($campaign['title']) ?> · <?= e((new DateTimeImmutable($campaign['event_date']))->format('jS M Y')) ?>
+            SPECIAL EVENT — <?= e($campaign['title']) ?> · <?php
+              $cStart = (string) $campaign['event_date'];
+              $cEnd = (string) ($campaign['event_end_date'] ?? $cStart);
+              if ($cEnd !== '' && $cEnd !== $cStart) {
+                  echo e((new DateTimeImmutable($cStart))->format('j M') . ' – ' . (new DateTimeImmutable($cEnd))->format('j M Y'));
+              } else {
+                  echo e((new DateTimeImmutable($cStart))->format('jS M Y'));
+              }
+            ?>
           </th>
         </tr>
         <tr>
           <th class="col-product">Product</th>
-          <th>Daily limit</th>
+          <th>Limit</th>
           <th>Registered</th>
           <th class="val-purchased">Redeemed</th>
           <th>Remaining</th>
@@ -110,7 +118,15 @@ require __DIR__ . '/../templates/header.php';
           <?php if ((int) ($row['active'] ?? 0) !== 1 && (int) ($row['registered'] ?? 0) === 0) continue; ?>
           <tr>
             <td class="col-product"><?= e($row['label']) ?></td>
-            <td><?= ((int) $row['allocated'] >= 99999) ? 'No limit' : (int) $row['allocated'] ?></td>
+            <td><?php
+              if ((int) $row['allocated'] >= 99999) {
+                  echo 'No limit';
+              } elseif (($row['capacity_scope'] ?? '') === 'session') {
+                  echo (int) $row['allocated'] . ' / session';
+              } else {
+                  echo (int) $row['allocated'] . ' / day';
+              }
+            ?></td>
             <td><?= (int) $row['registered'] ?></td>
             <td class="val-purchased"><?= (int) $row['purchased'] ?></td>
             <td><?= ((int) $row['allocated'] >= 99999) ? '—' : (int) $row['remaining'] ?></td>

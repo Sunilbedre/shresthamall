@@ -483,35 +483,61 @@ final class CampaignService
         }
 
         $pdo = Database::connection();
-        $eventDate = (string) $campaign['event_date'];
+        $startDate = (string) $campaign['event_date'];
+        $endDate = (string) ($campaign['event_end_date'] ?? $startDate);
+        if ($endDate === '' || $endDate < $startDate) {
+            $endDate = $startDate;
+        }
+        $today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+        $reportDate = ($today >= $startDate && $today <= $endDate) ? $today : $startDate;
+
         $products = self::products($campaignId, false);
         $rows = [];
         $totals = ['allocated' => 0, 'registered' => 0, 'purchased' => 0];
 
+        $regStmt = $pdo->prepare("
+            SELECT COUNT(*) FROM customers
+            WHERE campaign_id = :cid AND selected_product = :p
+              AND event_date >= :start AND event_date <= :end
+        ");
+        $buyStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM customers c
+            INNER JOIN vouchers v ON v.customer_id = c.id
+            WHERE c.campaign_id = :cid
+              AND c.selected_product = :p
+              AND c.event_date >= :start AND c.event_date <= :end
+              AND v.status = 'REDEEMED'
+        ");
+
         foreach ($products as $p) {
             $allocated = (int) $p['daily_capacity'];
-            $registered = self::bookedCount($campaignId, (string) $p['product_key'], $eventDate);
+            $productKey = (string) $p['product_key'];
+            $scope = self::capacityScope($p);
 
-            $buyStmt = $pdo->prepare("
-                SELECT COUNT(*)
-                FROM customers c
-                INNER JOIN vouchers v ON v.customer_id = c.id
-                WHERE c.campaign_id = :cid
-                  AND c.selected_product = :p
-                  AND c.event_date = :d
-                  AND v.status = 'REDEEMED'
-            ");
-            $buyStmt->execute(['cid' => $campaignId, 'p' => $p['product_key'], 'd' => $eventDate]);
+            $regStmt->execute(['cid' => $campaignId, 'p' => $productKey, 'start' => $startDate, 'end' => $endDate]);
+            $registered = (int) $regStmt->fetchColumn();
+
+            $buyStmt->execute(['cid' => $campaignId, 'p' => $productKey, 'start' => $startDate, 'end' => $endDate]);
             $purchased = (int) $buyStmt->fetchColumn();
-            $remaining = self::remainingDaily($campaignId, (string) $p['product_key'], $eventDate, $allocated);
+
+            $remaining = self::remainingDaily(
+                $campaignId,
+                $productKey,
+                $reportDate,
+                $allocated,
+                $p,
+                $scope === 'session' ? 'morning' : null
+            );
             $pct = $registered > 0 ? round(($purchased / $registered) * 100, 2) : 0.0;
 
             $rows[] = [
-                'product_key' => $p['product_key'],
+                'product_key' => $productKey,
                 'product_slug' => $p['product_slug'],
                 'label' => $p['label'],
                 'active' => (int) $p['active'],
                 'allocated' => $allocated,
+                'capacity_scope' => $scope,
                 'registered' => $registered,
                 'purchased' => $purchased,
                 'remaining' => $remaining,
@@ -520,7 +546,9 @@ final class CampaignService
             ];
 
             if ((int) $p['active'] === 1) {
-                $totals['allocated'] += $allocated >= 99999 ? 0 : $allocated;
+                if ($allocated < 99999) {
+                    $totals['allocated'] += $scope === 'session' ? $allocated * 2 : $allocated;
+                }
                 $totals['registered'] += $registered;
                 $totals['purchased'] += $purchased;
             }
