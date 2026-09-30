@@ -3,9 +3,9 @@
  * scripts/setup_oct_3_15_saree_event.php
  * SL#10 — 3 Oct to 15 Oct 2026, all days (Malleshwaram store).
  *
- * Separate links:
- *   /s/oct-saree-10/saree         — 1 Rupee Saree (50 per session: 11:30–2:30 & 5:00–8:00)
- *   /s/oct-saree-10/saree-min99   — 1 Rupee Saree — Min purchase ₹99/- (no limit)
+ * One share link (free slot when available, else min ₹99 on same page):
+ *   /s/oct-saree-10/saree
+ * Legacy /saree-min99 redirects to /saree.
  *
  * Usage: php scripts/setup_oct_3_15_saree_event.php
  */

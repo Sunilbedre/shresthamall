@@ -77,6 +77,13 @@ require __DIR__ . '/../templates/header.php';
     <ul class="text-sm space-y-2">
       <?php foreach ($rows as $row): ?>
         <?php if ((int) ($row['active'] ?? 0) !== 1) continue; ?>
+        <?php
+          $slug = (string) ($row['product_slug'] ?? '');
+          $key = (string) ($row['product_key'] ?? '');
+          if (str_contains($slug, 'min99') || str_contains($key, 'min99')) {
+              continue;
+          }
+        ?>
         <li class="flex flex-wrap gap-2 items-center">
           <span class="font-semibold text-maroon-dark min-w-[200px]"><?= e($row['label']) ?></span>
           <a href="<?= e($row['url']) ?>" class="text-blue-700 underline break-all" target="_blank" rel="noopener"><?= e($row['url']) ?></a>

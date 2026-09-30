@@ -345,6 +345,53 @@ final class CampaignService
         return null;
     }
 
+    public static function findFreeOfferSibling(array $campaign, string $currentProductSlug): ?array
+    {
+        foreach (self::products((int) $campaign['id']) as $p) {
+            if ($p['product_slug'] === $currentProductSlug) {
+                continue;
+            }
+            $slug = (string) $p['product_slug'];
+            $key = (string) $p['product_key'];
+            if (!str_contains($slug, 'min99') && !str_contains($key, 'min99')) {
+                return self::findProduct((int) $campaign['id'], $slug);
+            }
+        }
+        return null;
+    }
+
+    /** One public link: free slot when available, else min-₹99 product (same form). */
+    public static function effectiveProductForRegistration(
+        array $campaign,
+        array $primaryProduct,
+        string $visitDate,
+        string $session
+    ): array {
+        if ($visitDate === '' || !Products::isValidSession($session)) {
+            return $primaryProduct;
+        }
+        if (str_contains((string) $primaryProduct['product_key'], 'min99')
+            || str_contains(strtolower((string) $primaryProduct['product_slug']), 'min99')) {
+            return $primaryProduct;
+        }
+        $min99 = self::findMin99Sibling($campaign, (string) $primaryProduct['product_slug']);
+        if ($min99 === null) {
+            return $primaryProduct;
+        }
+        if (self::isProductFull($primaryProduct, $visitDate, $session)) {
+            return $min99;
+        }
+        return $primaryProduct;
+    }
+
+    public static function hasUnifiedMin99Fallback(array $campaign, array $primaryProduct): bool
+    {
+        if (str_contains((string) $primaryProduct['product_key'], 'min99')) {
+            return false;
+        }
+        return self::findMin99Sibling($campaign, (string) $primaryProduct['product_slug']) !== null;
+    }
+
     public static function sessionWindow(array $campaign, string $session, ?string $visitDate = null): array
     {
         $date = $visitDate ?? (string) $campaign['event_date'];

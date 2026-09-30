@@ -44,6 +44,15 @@ if ($campaign === null) {
     exit;
 }
 
+$isMin99Slug = str_contains($productSlug, 'min99')
+    || str_contains((string) $productRow['product_key'], 'min99');
+if ($isMin99Slug) {
+    $freeSibling = CampaignService::findFreeOfferSibling($campaign, $productSlug);
+    if ($freeSibling !== null && CampaignService::hasUnifiedMin99Fallback($campaign, $freeSibling)) {
+        redirect('/s/' . rawurlencode($campaignSlug) . '/' . rawurlencode((string) $freeSibling['product_slug']));
+    }
+}
+
 $campaignOpen = CampaignService::isOpen($campaign);
 $visitDates = CampaignService::visitDates($campaign);
 $isMultiDay = count($visitDates) > 1;
@@ -57,9 +66,12 @@ foreach ($visitDates as $d) {
     }
 }
 
-$productFull = $isSessionScoped
-    ? CampaignService::isSoldOutEverywhere($campaign, $productRow)
-    : CampaignService::isProductFull($productRow, $defaultVisitDate);
+$unifiedMin99 = CampaignService::hasUnifiedMin99Fallback($campaign, $productRow);
+$productFull = $unifiedMin99
+    ? false
+    : ($isSessionScoped
+        ? CampaignService::isSoldOutEverywhere($campaign, $productRow)
+        : CampaignService::isProductFull($productRow, $defaultVisitDate));
 
 $remaining = CampaignService::remainingDaily(
     (int) $campaign['id'],
@@ -102,10 +114,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors['_general'] = 'Too many attempts. Please wait a few minutes and try again.';
     } else {
         $oldInput = $_POST;
+        $visitForProduct = trim((string) ($_POST['visit_date'] ?? ''));
+        if ($visitForProduct === '') {
+            $visitForProduct = $defaultVisitDate;
+        }
+        $sessionForProduct = (string) ($_POST['session'] ?? '');
+        $registrationProduct = CampaignService::effectiveProductForRegistration(
+            $campaign,
+            $productRow,
+            $visitForProduct,
+            $sessionForProduct
+        );
         $result = CustomerService::registerSpecial(
             $_POST,
             $campaign,
-            $productRow,
+            $registrationProduct,
             $_SERVER['REMOTE_ADDR'] ?? '',
             $_SERVER['HTTP_USER_AGENT'] ?? ''
         );
@@ -192,9 +215,12 @@ require __DIR__ . '/../templates/header.php';
       <div class="px-3.5 sm:px-5 pt-4 pb-1 text-center border-b border-gold/25">
         <p class="text-[10px] font-semibold uppercase tracking-widest text-maroon-dark/55"><?= e($campaignTitle) ?></p>
         <h2 class="font-heading text-lg font-bold leading-tight text-maroon mt-1"><?= e($productLabel) ?></h2>
-        <?php if (str_contains((string) $productRow['product_key'], 'min99') || str_contains(strtolower($productLabel), 'min purchase')): ?>
+        <?php if ($unifiedMin99): ?>
+          <p class="text-xs text-maroon-dark/75 mt-1.5 leading-snug">One link for this offer: <strong>free ₹1 slot</strong> when available, otherwise <strong>₹1 saree with min store purchase ₹99/-</strong>.</p>
+        <?php elseif (str_contains((string) $productRow['product_key'], 'min99') || str_contains(strtolower($productLabel), 'min purchase')): ?>
           <p class="text-xs font-semibold text-maroon-dark/80 mt-1.5">Minimum store purchase of ₹99 required to redeem this ₹1 saree offer.</p>
         <?php endif; ?>
+        <p id="min99_inline_notice" class="hidden text-xs font-semibold text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2 leading-snug"></p>
         <p class="text-xs text-maroon-dark/65 mt-1"><?= e($eventDateFormatted) ?></p>
         <?php if ($isSessionScoped): ?>
           <p class="text-[11px] text-maroon-dark/55 mt-1">Up to <?= (int) $productRow['daily_capacity'] ?> free registrations per session (morning &amp; evening)</p>
@@ -303,12 +329,12 @@ require __DIR__ . '/../templates/header.php';
   <?php endif; ?>
 </main>
 
-<?php if ($min99Url && !$isMin99Product && !$productFull && $isSessionScoped): ?>
+<?php if ($unifiedMin99 && !$productFull && $isSessionScoped): ?>
 <div id="min99_popup" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true">
   <div class="bg-white gold-border rounded-2xl shadow-xl max-w-sm w-full p-5 text-center">
     <h3 class="font-heading text-lg font-bold text-maroon mb-2">Free slot is full</h3>
-    <p class="text-sm text-maroon-dark/80 mb-4">This session&apos;s free ₹1 saree slots are filled. You can still register with a <strong>minimum store purchase of ₹99/-</strong>.</p>
-    <a href="<?= e($min99Url) ?>" class="block tap-target bg-gold text-maroon-dark font-bold rounded-xl py-3.5 mb-2">Go to Min ₹99 offer</a>
+    <p class="text-sm text-maroon-dark/80 mb-4">This session&apos;s <strong>free</strong> ₹1 saree slots are filled. You can still complete registration on this page with a <strong>minimum store purchase of ₹99/-</strong>.</p>
+    <button type="button" id="min99_popup_continue" class="block w-full tap-target bg-gold text-maroon-dark font-bold rounded-xl py-3.5 mb-2">Continue registration here</button>
     <button type="button" id="min99_popup_close" class="text-sm text-maroon-dark/60 underline">Choose another date or time</button>
   </div>
 </div>
@@ -317,8 +343,11 @@ require __DIR__ . '/../templates/header.php';
 <?php if ($isSessionScoped && !$productFull): ?>
 <script>
   const remainingBySlot = <?= json_encode($remainingBySlot, JSON_UNESCAPED_UNICODE) ?>;
+  const unifiedMin99 = <?= $unifiedMin99 ? 'true' : 'false' ?>;
   const min99Popup = document.getElementById('min99_popup');
+  const min99PopupContinue = document.getElementById('min99_popup_continue');
   const min99PopupClose = document.getElementById('min99_popup_close');
+  const min99InlineNotice = document.getElementById('min99_inline_notice');
   const visitDateEl = document.getElementById('visit_date');
   const sessionEl = document.getElementById('session');
   const hintEl = document.getElementById('slot_remaining_hint');
@@ -339,17 +368,30 @@ require __DIR__ . '/../templates/header.php';
       return;
     }
     if (rem <= 0) {
-      hintEl.textContent = 'This session is full for the selected date.';
-      hintEl.classList.add('text-red-700');
+      if (unifiedMin99) {
+        hintEl.textContent = 'Free slots full — you can still register with min purchase ₹99/- below.';
+        hintEl.classList.remove('text-red-700');
+      } else {
+        hintEl.textContent = 'This session is full for the selected date.';
+        hintEl.classList.add('text-red-700');
+      }
     } else {
       hintEl.textContent = rem + ' free spot(s) left for this session';
       hintEl.classList.remove('text-red-700');
+    }
+    if (min99InlineNotice && unifiedMin99) {
+      if (rem !== null && rem <= 0) {
+        min99InlineNotice.textContent = 'Free slots are full for this date & time. Your voucher will be for ₹1 saree with minimum store purchase of ₹99/-.';
+        min99InlineNotice.classList.remove('hidden');
+      } else {
+        min99InlineNotice.classList.add('hidden');
+      }
     }
   }
 
   function maybeShowMin99Popup() {
     const rem = selectedRemaining();
-    if (min99Popup && rem !== null && rem <= 0) {
+    if (unifiedMin99 && min99Popup && rem !== null && rem <= 0) {
       min99Popup.classList.remove('hidden');
       min99Popup.classList.add('flex');
     } else if (min99Popup) {
@@ -365,14 +407,14 @@ require __DIR__ . '/../templates/header.php';
 
   if (visitDateEl) visitDateEl.addEventListener('change', onSlotChange);
   if (sessionEl) sessionEl.addEventListener('change', onSlotChange);
-  if (min99PopupClose) {
-    min99PopupClose.addEventListener('click', () => {
-      if (min99Popup) {
-        min99Popup.classList.add('hidden');
-        min99Popup.classList.remove('flex');
-      }
-    });
+  function closeMin99Popup() {
+    if (min99Popup) {
+      min99Popup.classList.add('hidden');
+      min99Popup.classList.remove('flex');
+    }
   }
+  if (min99PopupContinue) min99PopupContinue.addEventListener('click', closeMin99Popup);
+  if (min99PopupClose) min99PopupClose.addEventListener('click', closeMin99Popup);
   onSlotChange();
 </script>
 <?php endif; ?>
