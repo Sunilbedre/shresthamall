@@ -48,6 +48,7 @@ require __DIR__ . '/../templates/header.php';
     <div>
       <h2 class="font-heading text-2xl font-bold text-maroon">Special Events Report</h2>
       <p class="text-sm text-maroon-dark/65">Separate from weekend offers — one-day / big-date events with product links</p>
+      <p class="text-xs text-maroon-dark/55 mt-1">One customer link can register as <strong>Free slot</strong> or <strong>Min ₹99</strong>; both types appear as separate rows below.</p>
     </div>
     <button type="button" onclick="window.print()" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-gold text-maroon-dark">Print / PDF</button>
   </div>
@@ -99,7 +100,7 @@ require __DIR__ . '/../templates/header.php';
     <table class="sp-report">
       <thead>
         <tr>
-          <th class="hdr-title" colspan="6">
+          <th class="hdr-title" colspan="7">
             SPECIAL EVENT — <?= e($campaign['title']) ?> · <?php
               $cStart = (string) $campaign['event_date'];
               $cEnd = (string) ($campaign['event_end_date'] ?? $cStart);
@@ -113,6 +114,7 @@ require __DIR__ . '/../templates/header.php';
         </tr>
         <tr>
           <th class="col-product">Product</th>
+          <th>Type</th>
           <th>Limit</th>
           <th>Registered</th>
           <th class="val-purchased">Redeemed</th>
@@ -125,6 +127,15 @@ require __DIR__ . '/../templates/header.php';
           <?php if ((int) ($row['active'] ?? 0) !== 1 && (int) ($row['registered'] ?? 0) === 0) continue; ?>
           <tr>
             <td class="col-product"><?= e($row['label']) ?></td>
+            <td><?php
+              $isMin99Row = str_contains((string) ($row['product_key'] ?? ''), 'min99')
+                  || str_contains(strtolower((string) ($row['product_slug'] ?? '')), 'min99');
+              if ($isMin99Row) {
+                  echo '<span class="text-xs font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded">Min ₹99</span>';
+              } else {
+                  echo '<span class="text-xs font-bold bg-green-100 text-green-800 px-2 py-0.5 rounded">Free slot</span>';
+              }
+            ?></td>
             <td><?php
               if ((int) $row['allocated'] >= 99999) {
                   echo 'No limit';
@@ -145,7 +156,7 @@ require __DIR__ . '/../templates/header.php';
           <td><?= (int) $totals['allocated'] ?></td>
           <td><?= (int) $totals['registered'] ?></td>
           <td><?= (int) $totals['purchased'] ?></td>
-          <td colspan="2"></td>
+          <td colspan="3"></td>
         </tr>
       </tbody>
     </table>
