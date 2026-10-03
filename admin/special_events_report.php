@@ -153,10 +153,11 @@ require __DIR__ . '/../templates/header.php';
         <?php endforeach; ?>
         <tr class="total-row">
           <td>Grand Total</td>
+          <td></td>
           <td><?= (int) $totals['allocated'] ?></td>
           <td><?= (int) $totals['registered'] ?></td>
-          <td><?= (int) $totals['purchased'] ?></td>
-          <td colspan="3"></td>
+          <td class="val-purchased"><?= (int) $totals['purchased'] ?></td>
+          <td colspan="2"></td>
         </tr>
       </tbody>
     </table>
