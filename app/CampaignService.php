@@ -18,6 +18,7 @@ final class CampaignService
                 slug TEXT NOT NULL UNIQUE,
                 title TEXT NOT NULL,
                 event_date TEXT NOT NULL,
+                event_end_date TEXT NULL,
                 status TEXT NOT NULL DEFAULT 'OPEN',
                 morning_start TEXT NOT NULL DEFAULT '11:30',
                 morning_end TEXT NOT NULL DEFAULT '14:30',
@@ -35,6 +36,7 @@ final class CampaignService
                 product_slug TEXT NOT NULL,
                 label TEXT NOT NULL,
                 daily_capacity INTEGER NOT NULL DEFAULT 0,
+                capacity_scope TEXT NOT NULL DEFAULT 'day',
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -44,6 +46,8 @@ final class CampaignService
             );
         ");
         $pdo->exec("CREATE INDEX IF NOT EXISTS idx_campaign_products_campaign ON campaign_products(campaign_id);");
+
+        self::migrateCampaignColumns($pdo);
 
         $cols = $pdo->query("PRAGMA table_info(customers)")->fetchAll(PDO::FETCH_ASSOC);
         $names = array_column($cols, 'name');
@@ -81,7 +85,7 @@ final class CampaignService
         ];
 
         foreach ($products as [$key, $slug, $label, $cap, $sort]) {
-            self::upsertProduct($campaignId, $key, $slug, $label, $cap, $sort);
+            self::upsertProduct($campaignId, $key, $slug, $label, $cap, $sort, 'day');
         }
     }
 
@@ -95,6 +99,19 @@ final class CampaignService
             return;
         }
         self::seedOct2026Special();
+    }
+
+    private static function migrateCampaignColumns(PDO $pdo): void
+    {
+        $campaignCols = array_column($pdo->query('PRAGMA table_info(campaigns)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        if (!in_array('event_end_date', $campaignCols, true)) {
+            $pdo->exec('ALTER TABLE campaigns ADD COLUMN event_end_date TEXT NULL');
+        }
+
+        $productCols = array_column($pdo->query('PRAGMA table_info(campaign_products)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        if (!in_array('capacity_scope', $productCols, true)) {
+            $pdo->exec("ALTER TABLE campaign_products ADD COLUMN capacity_scope TEXT NOT NULL DEFAULT 'day'");
+        }
     }
 
     private static function migrateMobileIndexes(PDO $pdo): void
@@ -191,43 +208,193 @@ final class CampaignService
             return false;
         }
         $today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
-        return ((string) ($campaign['event_date'] ?? '')) >= $today;
+        $end = (string) ($campaign['event_end_date'] ?? $campaign['event_date'] ?? '');
+        return $end !== '' && $today <= $end;
     }
 
-    public static function bookedCount(int $campaignId, string $productKey, string $eventDate): int
+    /** @return list<string> Y-m-d */
+    public static function visitDates(array $campaign): array
+    {
+        $start = (string) ($campaign['event_date'] ?? '');
+        $end = (string) ($campaign['event_end_date'] ?? $start);
+        if ($start === '') {
+            return [];
+        }
+        if ($end === '' || $end < $start) {
+            $end = $start;
+        }
+        $tz = new DateTimeZone('Asia/Kolkata');
+        $from = new DateTimeImmutable($start, $tz);
+        $to = new DateTimeImmutable($end, $tz);
+        $dates = [];
+        for ($d = $from; $d <= $to; $d = $d->modify('+1 day')) {
+            $dates[] = $d->format('Y-m-d');
+        }
+        return $dates;
+    }
+
+    public static function isValidVisitDate(array $campaign, string $visitDate): bool
+    {
+        $visitDate = trim($visitDate);
+        return $visitDate !== '' && in_array($visitDate, self::visitDates($campaign), true);
+    }
+
+    public static function capacityScope(array $productRow): string
+    {
+        $scope = strtolower(trim((string) ($productRow['capacity_scope'] ?? 'day')));
+        return $scope === 'session' ? 'session' : 'day';
+    }
+
+    public static function bookedCount(int $campaignId, string $productKey, string $eventDate, ?string $session = null): int
     {
         $pdo = Database::connection();
-        $stmt = $pdo->prepare("
+        $sql = "
             SELECT COUNT(*) FROM customers
             WHERE campaign_id = :cid
               AND selected_product = :p
               AND event_date = :d
-        ");
-        $stmt->execute(['cid' => $campaignId, 'p' => $productKey, 'd' => $eventDate]);
+        ";
+        $params = ['cid' => $campaignId, 'p' => $productKey, 'd' => $eventDate];
+        if ($session !== null && $session !== '') {
+            $sql .= ' AND session = :s';
+            $params['s'] = $session;
+        }
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
         return (int) $stmt->fetchColumn();
     }
 
-    public static function remainingDaily(int $campaignId, string $productKey, string $eventDate, int $dailyCapacity): int
-    {
+    public static function remainingDaily(
+        int $campaignId,
+        string $productKey,
+        string $eventDate,
+        int $dailyCapacity,
+        array $productRow = [],
+        ?string $session = null
+    ): int {
         if ($dailyCapacity >= 99999) {
             return 99999;
         }
-        return max(0, $dailyCapacity - self::bookedCount($campaignId, $productKey, $eventDate));
+        $scope = self::capacityScope($productRow);
+        $sessionFilter = ($scope === 'session' && $session !== null && $session !== '') ? $session : null;
+        if ($scope === 'session' && ($session === null || $session === '')) {
+            return $dailyCapacity;
+        }
+        return max(0, $dailyCapacity - self::bookedCount($campaignId, $productKey, $eventDate, $sessionFilter));
     }
 
-    public static function isProductFull(array $productRow): bool
+    public static function isProductFull(array $productRow, ?string $eventDate = null, ?string $session = null): bool
     {
+        $eventDate = $eventDate ?? (string) ($productRow['event_date'] ?? '');
         return self::remainingDaily(
             (int) $productRow['campaign_id'],
             (string) $productRow['product_key'],
-            (string) $productRow['event_date'],
-            (int) $productRow['daily_capacity']
+            $eventDate,
+            (int) $productRow['daily_capacity'],
+            $productRow,
+            $session
         ) <= 0;
     }
 
-    public static function sessionWindow(array $campaign, string $session): array
+    /** True when no session on any visit date has free capacity (session-scoped products). */
+    public static function isSoldOutEverywhere(array $campaign, array $productRow): bool
     {
-        $date = (string) $campaign['event_date'];
+        if (self::capacityScope($productRow) !== 'session') {
+            return self::isProductFull($productRow, (string) $campaign['event_date']);
+        }
+        foreach (self::visitDates($campaign) as $date) {
+            foreach (['morning', 'evening'] as $session) {
+                if (!self::isProductFull($productRow, $date, $session)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @return array<string, array{morning:int, evening:int}>
+     */
+    public static function remainingByDateSession(array $campaign, array $productRow): array
+    {
+        $out = [];
+        $cap = (int) $productRow['daily_capacity'];
+        $cid = (int) $productRow['campaign_id'];
+        $key = (string) $productRow['product_key'];
+        foreach (self::visitDates($campaign) as $date) {
+            $out[$date] = [
+                'morning' => self::remainingDaily($cid, $key, $date, $cap, $productRow, 'morning'),
+                'evening' => self::remainingDaily($cid, $key, $date, $cap, $productRow, 'evening'),
+            ];
+        }
+        return $out;
+    }
+
+    public static function findMin99Sibling(array $campaign, string $currentProductSlug): ?array
+    {
+        foreach (self::products((int) $campaign['id']) as $p) {
+            if ($p['product_slug'] === $currentProductSlug) {
+                continue;
+            }
+            $slug = (string) $p['product_slug'];
+            $key = (string) $p['product_key'];
+            if (str_contains($slug, 'min99') || str_contains($key, 'min99')) {
+                return self::findProduct((int) $campaign['id'], $slug);
+            }
+        }
+        return null;
+    }
+
+    public static function findFreeOfferSibling(array $campaign, string $currentProductSlug): ?array
+    {
+        foreach (self::products((int) $campaign['id']) as $p) {
+            if ($p['product_slug'] === $currentProductSlug) {
+                continue;
+            }
+            $slug = (string) $p['product_slug'];
+            $key = (string) $p['product_key'];
+            if (!str_contains($slug, 'min99') && !str_contains($key, 'min99')) {
+                return self::findProduct((int) $campaign['id'], $slug);
+            }
+        }
+        return null;
+    }
+
+    /** One public link: free slot when available, else min-₹99 product (same form). */
+    public static function effectiveProductForRegistration(
+        array $campaign,
+        array $primaryProduct,
+        string $visitDate,
+        string $session
+    ): array {
+        if ($visitDate === '' || !Products::isValidSession($session)) {
+            return $primaryProduct;
+        }
+        if (str_contains((string) $primaryProduct['product_key'], 'min99')
+            || str_contains(strtolower((string) $primaryProduct['product_slug']), 'min99')) {
+            return $primaryProduct;
+        }
+        $min99 = self::findMin99Sibling($campaign, (string) $primaryProduct['product_slug']);
+        if ($min99 === null) {
+            return $primaryProduct;
+        }
+        if (self::isProductFull($primaryProduct, $visitDate, $session)) {
+            return $min99;
+        }
+        return $primaryProduct;
+    }
+
+    public static function hasUnifiedMin99Fallback(array $campaign, array $primaryProduct): bool
+    {
+        if (str_contains((string) $primaryProduct['product_key'], 'min99')) {
+            return false;
+        }
+        return self::findMin99Sibling($campaign, (string) $primaryProduct['product_slug']) !== null;
+    }
+
+    public static function sessionWindow(array $campaign, string $session, ?string $visitDate = null): array
+    {
+        $date = $visitDate ?? (string) $campaign['event_date'];
         $tz = new DateTimeZone('Asia/Kolkata');
         if ($session === 'morning') {
             $start = new DateTimeImmutable($date . ' ' . $campaign['morning_start'], $tz);
@@ -254,22 +421,37 @@ final class CampaignService
         string $slug,
         string $title,
         string $eventDate,
-        string $status = 'OPEN'
+        string $status = 'OPEN',
+        ?string $eventEndDate = null,
+        string $morningStart = '11:30',
+        string $morningEnd = '14:30',
+        string $eveningStart = '17:00',
+        string $eveningEnd = '20:00'
     ): array {
         $pdo = Database::connection();
         $stmt = $pdo->prepare("
-            INSERT INTO campaigns (slug, title, event_date, status)
-            VALUES (:slug, :title, :date, :status)
+            INSERT INTO campaigns (slug, title, event_date, event_end_date, status, morning_start, morning_end, evening_start, evening_end)
+            VALUES (:slug, :title, :date, :end, :status, :ms, :me, :es, :ee)
             ON CONFLICT(slug) DO UPDATE SET
                 title = excluded.title,
                 event_date = excluded.event_date,
-                status = excluded.status
+                event_end_date = excluded.event_end_date,
+                status = excluded.status,
+                morning_start = excluded.morning_start,
+                morning_end = excluded.morning_end,
+                evening_start = excluded.evening_start,
+                evening_end = excluded.evening_end
         ");
         $stmt->execute([
             'slug' => strtolower(trim($slug)),
             'title' => trim($title),
             'date' => $eventDate,
+            'end' => $eventEndDate,
             'status' => strtoupper($status),
+            'ms' => $morningStart,
+            'me' => $morningEnd,
+            'es' => $eveningStart,
+            'ee' => $eveningEnd,
         ]);
         $row = self::findBySlug($slug);
         return ['ok' => true, 'id' => (int) ($row['id'] ?? 0)];
@@ -281,16 +463,19 @@ final class CampaignService
         string $productSlug,
         string $label,
         int $dailyCapacity,
-        int $sortOrder = 0
+        int $sortOrder = 0,
+        string $capacityScope = 'day'
     ): array {
+        $scope = strtolower(trim($capacityScope)) === 'session' ? 'session' : 'day';
         $pdo = Database::connection();
         $stmt = $pdo->prepare("
-            INSERT INTO campaign_products (campaign_id, product_key, product_slug, label, daily_capacity, sort_order, active)
-            VALUES (:cid, :pk, :ps, :label, :cap, :sort, 1)
+            INSERT INTO campaign_products (campaign_id, product_key, product_slug, label, daily_capacity, capacity_scope, sort_order, active)
+            VALUES (:cid, :pk, :ps, :label, :cap, :scope, :sort, 1)
             ON CONFLICT(campaign_id, product_key) DO UPDATE SET
                 product_slug = excluded.product_slug,
                 label = excluded.label,
                 daily_capacity = excluded.daily_capacity,
+                capacity_scope = excluded.capacity_scope,
                 sort_order = excluded.sort_order,
                 active = 1
         ");
@@ -300,9 +485,38 @@ final class CampaignService
             'ps' => strtolower(trim($productSlug)),
             'label' => trim($label),
             'cap' => $dailyCapacity,
+            'scope' => $scope,
             'sort' => $sortOrder,
         ]);
         return ['ok' => true];
+    }
+
+    /** Oct 3–15, 2026 — SL#10 saree offers (50 free / slot, unlimited min ₹99). */
+    public static function seedOctSaree1012026(): void
+    {
+        $res = self::upsertCampaign(
+            'oct-saree-10',
+            '₹1 Saree Offer — Malleshwaram',
+            '2026-10-03',
+            'OPEN',
+            '2026-10-15',
+            '11:30',
+            '14:30',
+            '17:00',
+            '20:00'
+        );
+        $campaignId = (int) ($res['id'] ?? 0);
+        if ($campaignId <= 0) {
+            $c = self::findBySlug('oct-saree-10');
+            $campaignId = (int) ($c['id'] ?? 0);
+        }
+        if ($campaignId <= 0) {
+            return;
+        }
+
+        $unlimited = 99999;
+        self::upsertProduct($campaignId, 'rupee1_saree_free_oct101', 'saree', '1 Rupee Saree', 50, 1, 'session');
+        self::upsertProduct($campaignId, 'rupee1_saree_min99_oct101', 'saree-min99', '1 Rupee Saree — Min purchase ₹99/-', $unlimited, 2, 'day');
     }
 
     /**
@@ -316,35 +530,61 @@ final class CampaignService
         }
 
         $pdo = Database::connection();
-        $eventDate = (string) $campaign['event_date'];
+        $startDate = (string) $campaign['event_date'];
+        $endDate = (string) ($campaign['event_end_date'] ?? $startDate);
+        if ($endDate === '' || $endDate < $startDate) {
+            $endDate = $startDate;
+        }
+        $today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+        $reportDate = ($today >= $startDate && $today <= $endDate) ? $today : $startDate;
+
         $products = self::products($campaignId, false);
         $rows = [];
         $totals = ['allocated' => 0, 'registered' => 0, 'purchased' => 0];
 
+        $regStmt = $pdo->prepare("
+            SELECT COUNT(*) FROM customers
+            WHERE campaign_id = :cid AND selected_product = :p
+              AND event_date >= :start AND event_date <= :end
+        ");
+        $buyStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM customers c
+            INNER JOIN vouchers v ON v.customer_id = c.id
+            WHERE c.campaign_id = :cid
+              AND c.selected_product = :p
+              AND c.event_date >= :start AND c.event_date <= :end
+              AND v.status = 'REDEEMED'
+        ");
+
         foreach ($products as $p) {
             $allocated = (int) $p['daily_capacity'];
-            $registered = self::bookedCount($campaignId, (string) $p['product_key'], $eventDate);
+            $productKey = (string) $p['product_key'];
+            $scope = self::capacityScope($p);
 
-            $buyStmt = $pdo->prepare("
-                SELECT COUNT(*)
-                FROM customers c
-                INNER JOIN vouchers v ON v.customer_id = c.id
-                WHERE c.campaign_id = :cid
-                  AND c.selected_product = :p
-                  AND c.event_date = :d
-                  AND v.status = 'REDEEMED'
-            ");
-            $buyStmt->execute(['cid' => $campaignId, 'p' => $p['product_key'], 'd' => $eventDate]);
+            $regStmt->execute(['cid' => $campaignId, 'p' => $productKey, 'start' => $startDate, 'end' => $endDate]);
+            $registered = (int) $regStmt->fetchColumn();
+
+            $buyStmt->execute(['cid' => $campaignId, 'p' => $productKey, 'start' => $startDate, 'end' => $endDate]);
             $purchased = (int) $buyStmt->fetchColumn();
-            $remaining = self::remainingDaily($campaignId, (string) $p['product_key'], $eventDate, $allocated);
+
+            $remaining = self::remainingDaily(
+                $campaignId,
+                $productKey,
+                $reportDate,
+                $allocated,
+                $p,
+                $scope === 'session' ? 'morning' : null
+            );
             $pct = $registered > 0 ? round(($purchased / $registered) * 100, 2) : 0.0;
 
             $rows[] = [
-                'product_key' => $p['product_key'],
+                'product_key' => $productKey,
                 'product_slug' => $p['product_slug'],
                 'label' => $p['label'],
                 'active' => (int) $p['active'],
                 'allocated' => $allocated,
+                'capacity_scope' => $scope,
                 'registered' => $registered,
                 'purchased' => $purchased,
                 'remaining' => $remaining,
@@ -353,7 +593,9 @@ final class CampaignService
             ];
 
             if ((int) $p['active'] === 1) {
-                $totals['allocated'] += $allocated >= 99999 ? 0 : $allocated;
+                if ($allocated < 99999) {
+                    $totals['allocated'] += $scope === 'session' ? $allocated * 2 : $allocated;
+                }
                 $totals['registered'] += $registered;
                 $totals['purchased'] += $purchased;
             }

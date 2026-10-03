@@ -258,7 +258,16 @@ require __DIR__ . '/../templates/header.php';
             <td class="px-3 py-2.5 font-medium"><?= e($row['full_name']) ?></td>
             <td class="px-3 py-2.5"><?= e(Validation::maskMobile($row['mobile_number'])) ?></td>
             <td class="px-3 py-2.5 whitespace-nowrap"><?= e($row['area'] ?? '—') ?></td>
-            <td class="px-3 py-2.5"><?= e(Products::label($row['selected_product']) ?? $row['selected_product']) ?></td>
+            <td class="px-3 py-2.5">
+              <?= e(Products::label($row['selected_product']) ?? $row['selected_product']) ?>
+              <?php
+                $pk = (string) ($row['selected_product'] ?? '');
+                if (str_contains($pk, 'min99')): ?>
+                <span class="ml-1 text-[10px] font-bold bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded align-middle">Min ₹99</span>
+              <?php elseif ($pk !== '' && !str_contains($pk, 'min99') && str_contains($pk, 'saree')): ?>
+                <span class="ml-1 text-[10px] font-bold bg-green-100 text-green-800 px-1.5 py-0.5 rounded align-middle">Free</span>
+              <?php endif; ?>
+            </td>
             <td class="px-3 py-2.5 whitespace-nowrap"><?= e(!empty($row['event_date']) ? (new DateTimeImmutable($row['event_date']))->format('d M Y') : '—') ?></td>
             <td class="px-3 py-2.5 whitespace-nowrap"><?= e(match ($row['session'] ?? '') {
               'morning' => 'Morning',

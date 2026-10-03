@@ -48,6 +48,7 @@ require __DIR__ . '/../templates/header.php';
     <div>
       <h2 class="font-heading text-2xl font-bold text-maroon">Special Events Report</h2>
       <p class="text-sm text-maroon-dark/65">Separate from weekend offers — one-day / big-date events with product links</p>
+      <p class="text-xs text-maroon-dark/55 mt-1">One customer link can register as <strong>Free slot</strong> or <strong>Min ₹99</strong>; both types appear as separate rows below.</p>
     </div>
     <button type="button" onclick="window.print()" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-gold text-maroon-dark">Print / PDF</button>
   </div>
@@ -77,6 +78,13 @@ require __DIR__ . '/../templates/header.php';
     <ul class="text-sm space-y-2">
       <?php foreach ($rows as $row): ?>
         <?php if ((int) ($row['active'] ?? 0) !== 1) continue; ?>
+        <?php
+          $slug = (string) ($row['product_slug'] ?? '');
+          $key = (string) ($row['product_key'] ?? '');
+          if (str_contains($slug, 'min99') || str_contains($key, 'min99')) {
+              continue;
+          }
+        ?>
         <li class="flex flex-wrap gap-2 items-center">
           <span class="font-semibold text-maroon-dark min-w-[200px]"><?= e($row['label']) ?></span>
           <a href="<?= e($row['url']) ?>" class="text-blue-700 underline break-all" target="_blank" rel="noopener"><?= e($row['url']) ?></a>
@@ -92,13 +100,22 @@ require __DIR__ . '/../templates/header.php';
     <table class="sp-report">
       <thead>
         <tr>
-          <th class="hdr-title" colspan="6">
-            SPECIAL EVENT — <?= e($campaign['title']) ?> · <?= e((new DateTimeImmutable($campaign['event_date']))->format('jS M Y')) ?>
+          <th class="hdr-title" colspan="7">
+            SPECIAL EVENT — <?= e($campaign['title']) ?> · <?php
+              $cStart = (string) $campaign['event_date'];
+              $cEnd = (string) ($campaign['event_end_date'] ?? $cStart);
+              if ($cEnd !== '' && $cEnd !== $cStart) {
+                  echo e((new DateTimeImmutable($cStart))->format('j M') . ' – ' . (new DateTimeImmutable($cEnd))->format('j M Y'));
+              } else {
+                  echo e((new DateTimeImmutable($cStart))->format('jS M Y'));
+              }
+            ?>
           </th>
         </tr>
         <tr>
           <th class="col-product">Product</th>
-          <th>Daily limit</th>
+          <th>Type</th>
+          <th>Limit</th>
           <th>Registered</th>
           <th class="val-purchased">Redeemed</th>
           <th>Remaining</th>
@@ -110,7 +127,24 @@ require __DIR__ . '/../templates/header.php';
           <?php if ((int) ($row['active'] ?? 0) !== 1 && (int) ($row['registered'] ?? 0) === 0) continue; ?>
           <tr>
             <td class="col-product"><?= e($row['label']) ?></td>
-            <td><?= ((int) $row['allocated'] >= 99999) ? 'No limit' : (int) $row['allocated'] ?></td>
+            <td><?php
+              $isMin99Row = str_contains((string) ($row['product_key'] ?? ''), 'min99')
+                  || str_contains(strtolower((string) ($row['product_slug'] ?? '')), 'min99');
+              if ($isMin99Row) {
+                  echo '<span class="text-xs font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded">Min ₹99</span>';
+              } else {
+                  echo '<span class="text-xs font-bold bg-green-100 text-green-800 px-2 py-0.5 rounded">Free slot</span>';
+              }
+            ?></td>
+            <td><?php
+              if ((int) $row['allocated'] >= 99999) {
+                  echo 'No limit';
+              } elseif (($row['capacity_scope'] ?? '') === 'session') {
+                  echo (int) $row['allocated'] . ' / session';
+              } else {
+                  echo (int) $row['allocated'] . ' / day';
+              }
+            ?></td>
             <td><?= (int) $row['registered'] ?></td>
             <td class="val-purchased"><?= (int) $row['purchased'] ?></td>
             <td><?= ((int) $row['allocated'] >= 99999) ? '—' : (int) $row['remaining'] ?></td>
@@ -119,9 +153,10 @@ require __DIR__ . '/../templates/header.php';
         <?php endforeach; ?>
         <tr class="total-row">
           <td>Grand Total</td>
+          <td></td>
           <td><?= (int) $totals['allocated'] ?></td>
           <td><?= (int) $totals['registered'] ?></td>
-          <td><?= (int) $totals['purchased'] ?></td>
+          <td class="val-purchased"><?= (int) $totals['purchased'] ?></td>
           <td colspan="2"></td>
         </tr>
       </tbody>
