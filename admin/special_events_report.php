@@ -81,7 +81,8 @@ require __DIR__ . '/../templates/header.php';
         <?php
           $slug = (string) ($row['product_slug'] ?? '');
           $key = (string) ($row['product_key'] ?? '');
-          if (str_contains($slug, 'min99') || str_contains($key, 'min99')) {
+          if ((str_contains($slug, 'min99') || str_contains($key, 'min99'))
+              && $campaign !== null && CampaignService::usesUnifiedMin99Link($campaign)) {
               continue;
           }
         ?>

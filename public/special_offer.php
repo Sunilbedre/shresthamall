@@ -46,7 +46,7 @@ if ($campaign === null) {
 
 $isMin99Slug = str_contains($productSlug, 'min99')
     || str_contains((string) $productRow['product_key'], 'min99');
-if ($isMin99Slug) {
+if ($isMin99Slug && CampaignService::usesUnifiedMin99Link($campaign)) {
     $freeSibling = CampaignService::findFreeOfferSibling($campaign, $productSlug);
     if ($freeSibling !== null && CampaignService::hasUnifiedMin99Fallback($campaign, $freeSibling)) {
         redirect('/s/' . rawurlencode($campaignSlug) . '/' . rawurlencode((string) $freeSibling['product_slug']));
@@ -66,7 +66,8 @@ foreach ($visitDates as $d) {
     }
 }
 
-$unifiedMin99 = CampaignService::hasUnifiedMin99Fallback($campaign, $productRow);
+$unifiedMin99 = CampaignService::usesUnifiedMin99Link($campaign)
+    && CampaignService::hasUnifiedMin99Fallback($campaign, $productRow);
 $productFull = $unifiedMin99
     ? false
     : ($isSessionScoped

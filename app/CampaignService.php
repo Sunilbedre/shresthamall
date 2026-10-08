@@ -392,6 +392,42 @@ final class CampaignService
         return self::findMin99Sibling($campaign, (string) $primaryProduct['product_slug']) !== null;
     }
 
+    /** Only Oct 3–15 Malleshwaram saree event uses one public link (free → min99 auto). */
+    public static function usesUnifiedMin99Link(array $campaign): bool
+    {
+        return strtolower(trim((string) ($campaign['slug'] ?? ''))) === 'oct-saree-10';
+    }
+
+    /** Oct 24, 2026 — same four products/links as Oct 2 Gandhi Jayanti. */
+    public static function seedOct242026Special(): void
+    {
+        $res = self::upsertCampaign(
+            'oct-24-2026',
+            '24 October Special — ₹1 Offer',
+            '2026-10-24',
+            'OPEN'
+        );
+        $campaignId = (int) ($res['id'] ?? 0);
+        if ($campaignId <= 0) {
+            $c = self::findBySlug('oct-24-2026');
+            $campaignId = (int) ($c['id'] ?? 0);
+        }
+        if ($campaignId <= 0) {
+            return;
+        }
+
+        $products = [
+            ['rupee1_saree_oct24', 'saree', '1 Rupee Saree', 500, 1],
+            ['rupee1_saree_min99_oct24', 'saree-min99', '1 Rupee Saree — Min purchase ₹99/-', 500, 2],
+            ['rupee1_kurti_oct24', 'kurti', '1 Rupee Kurti / Leggings', 200, 3],
+            ['rupee1_kids_tshirt_oct24', 'kids', "1 Rupee Kid's T-shirt", 200, 4],
+        ];
+
+        foreach ($products as [$key, $slug, $label, $cap, $sort]) {
+            self::upsertProduct($campaignId, $key, $slug, $label, $cap, $sort, 'day');
+        }
+    }
+
     public static function sessionWindow(array $campaign, string $session, ?string $visitDate = null): array
     {
         $date = $visitDate ?? (string) $campaign['event_date'];
