@@ -428,6 +428,36 @@ final class CampaignService
         }
     }
 
+    /** 7 Nov 2026 (Saturday) — same four products/links as Oct 24. */
+    public static function seedNov72026Special(): void
+    {
+        $res = self::upsertCampaign(
+            'nov-7-2026',
+            '7 November Special — ₹1 Offer',
+            '2026-11-07',
+            'OPEN'
+        );
+        $campaignId = (int) ($res['id'] ?? 0);
+        if ($campaignId <= 0) {
+            $c = self::findBySlug('nov-7-2026');
+            $campaignId = (int) ($c['id'] ?? 0);
+        }
+        if ($campaignId <= 0) {
+            return;
+        }
+
+        $products = [
+            ['rupee1_saree_nov7', 'saree', '1 Rupee Saree', 500, 1],
+            ['rupee1_saree_min99_nov7', 'saree-min99', '1 Rupee Saree — Min purchase ₹99/-', 500, 2],
+            ['rupee1_kurti_nov7', 'kurti', '1 Rupee Kurti / Leggings', 200, 3],
+            ['rupee1_kids_tshirt_nov7', 'kids', "1 Rupee Kid's T-shirt", 200, 4],
+        ];
+
+        foreach ($products as [$key, $slug, $label, $cap, $sort]) {
+            self::upsertProduct($campaignId, $key, $slug, $label, $cap, $sort, 'day');
+        }
+    }
+
     public static function sessionWindow(array $campaign, string $session, ?string $visitDate = null): array
     {
         $date = $visitDate ?? (string) $campaign['event_date'];
