@@ -28,7 +28,7 @@ foreach (CampaignService::products((int) $campaign['id']) as $p) {
 }
 
 echo "\n--- Report preview ---\n";
-$report = CampaignService::report($campaignId);
+$report = CampaignService::report((int) $campaign['id']);
 foreach ($report['products'] as $p) {
     echo sprintf(
         "%s | cap=%s | remaining=%s\n",
