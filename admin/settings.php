@@ -20,6 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'event_title', 'store_name', 'branch_name', 'store_address',
             'maps_link', 'contact_number', 'max_whatsapp_resends',
             'waitlist_form_url',
+            'instagram_profile_url',
+            'rupee1_qr_form_url',
         ];
         $update = [];
         foreach ($fields as $f) {
@@ -140,6 +142,22 @@ require __DIR__ . '/../templates/header.php';
         <label class="block text-sm font-semibold text-maroon-dark mb-1">Waiting List Form URL (Google Form)</label>
         <input type="url" name="waitlist_form_url" value="<?= e($s['waitlist_form_url'] ?? '') ?>" class="w-full rounded-lg gold-border px-3 py-2" placeholder="https://forms.gle/...">
         <p class="text-xs text-maroon-dark/55 mt-1">Shown automatically when all offer slots are full — customers can join the waitlist.</p>
+      </div>
+      <div class="sm:col-span-2 gold-border rounded-xl p-4 bg-ivory/40 space-y-3">
+        <h3 class="font-heading text-lg font-bold text-maroon">₹1 Saree QR landing page</h3>
+        <p class="text-xs text-maroon-dark/65">
+          Public link (for QR / posters):
+          <a class="text-blue-700 underline break-all" href="<?= e(app_url('1rs-saree')) ?>" target="_blank" rel="noopener"><?= e(app_url('1rs-saree')) ?></a>
+        </p>
+        <div>
+          <label class="block text-sm font-semibold text-maroon-dark mb-1">Instagram profile URL</label>
+          <input type="url" name="instagram_profile_url" value="<?= e($s['instagram_profile_url'] ?? '') ?>" class="w-full rounded-lg gold-border px-3 py-2" placeholder="https://www.instagram.com/...">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-maroon-dark mb-1">₹1 Saree registration form (Google Form)</label>
+          <input type="url" name="rupee1_qr_form_url" value="<?= e($s['rupee1_qr_form_url'] ?? '') ?>" class="w-full rounded-lg gold-border px-3 py-2" placeholder="https://docs.google.com/forms/...">
+          <p class="text-xs text-maroon-dark/55 mt-1">Register button opens this form. Leave empty to use the default form link.</p>
+        </div>
       </div>
       <div>
         <label class="block text-sm font-semibold text-maroon-dark mb-1">Contact Number</label>

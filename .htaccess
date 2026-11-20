@@ -47,6 +47,10 @@ RewriteRule ^v/([A-Za-z0-9\-]+)/?$ public/v.php?code=$1 [L,QSA]
 # ---- Special one-day events (separate link per product) ----------------------
 RewriteRule ^s/([a-z0-9-]+)/([a-z0-9-]+)/?$ public/special_offer.php?campaign=$1&product=$2 [L,QSA]
 
+# ₹1 Saree QR landing (Instagram + Google Form)
+RewriteRule ^1rs-saree/?$ public/rupee1_qr_register.php [L,QSA]
+RewriteRule ^1rs-saree\.php$ public/rupee1_qr_register.php [L,QSA]
+
 # ---- Static JS --------------------------------------------------------------
 RewriteRule ^js/register-flow\.js$ public/js/register-flow.js [L]
 

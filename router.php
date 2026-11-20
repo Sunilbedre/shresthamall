@@ -55,6 +55,8 @@ $routes = [
     '/voucher-pdf'           => 'public/voucher_pdf.php',
     '/voucher-pdf.php'       => 'public/voucher_pdf.php',
     '/js/register-flow.js'   => 'public/js/register-flow.js',
+    '/1rs-saree'             => 'public/rupee1_qr_register.php',
+    '/1rs-saree.php'         => 'public/rupee1_qr_register.php',
 ];
 
 $prefix = '/' . $adminPath;
